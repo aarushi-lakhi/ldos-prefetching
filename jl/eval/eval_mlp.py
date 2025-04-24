@@ -2,43 +2,82 @@ import time
 import torch
 from torch import nn
 
-from jl.models.mlp_replacement import CacheReplacementNN
+from jl.models.mlp_replacement import CacheReplacementNN, CacheReplacementNNTransformer
+from jl.models.transformer_encoder import TransformerEncoder
 from jl.dataloaders.dataloader import get_cache_dataloader
 from jl.utils import parse_args
 
+import jl.dataloaders.dataloader as dl
+
+
 args = parse_args()
 
-print("Init Dataloader")
-_, _, dataloader = get_cache_dataloader(args.cache_data_path, args.ip_history_window, args.batch_size)
+def eval(args):
+    print(f"------------------------------")
+    print(f"Config: dim {args.hidden_dim} window {args.ip_history_window}")
+    print("Init Dataloader")
 
-model = CacheReplacementNN(num_features=args.ip_history_window + 1, hidden_dim=args.hidden_dim)
+    _, _, dataloader = get_cache_dataloader(args.cache_data_path, args.ip_history_window, args.batch_size)
 
-state_dict = torch.load(f"./data/model/{args.model_name}.pth")
-model.load_state_dict(state_dict)
+    if args.encoder_name != "none":
+        contrastive_encoder = TransformerEncoder(
+            len(dl.CACHE_IP_TO_IDX) + 1, args.hidden_dim, args.hidden_dim
+        )
+        contrastive_encoder.load_state_dict(
+            torch.load(f"./data/model/{args.encoder_name}.pth")
+        )
+        model = CacheReplacementNN(
+            num_features=len(dl.CACHE_IP_TO_IDX) + 1,
+            hidden_dim=args.hidden_dim,
+            contrastive_encoder=contrastive_encoder,
+        )
+    elif args.basic_model:
+        model = CacheReplacementNN(
+            num_features=args.ip_history_window + 1, hidden_dim=args.hidden_dim
+        )
+    else:
+        model = CacheReplacementNNTransformer(
+            num_features=len(dl.CACHE_IP_TO_IDX) + 1, hidden_dim=args.hidden_dim
+        )
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = model.to(device)
-print(f"Using device: {device}")
+    state_dict = torch.load(f"./data/model/{args.model_name}.pth")
+    model.load_state_dict(state_dict)
 
-print("Begin Eval")
-model.eval()
-start_time = time.time()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+    print(f"Using device: {device}")
 
-correct = 0
-total = 0
-with torch.no_grad():
-    for batch, data in enumerate(dataloader):
-        inputs, labels = data
-        inputs, labels = inputs.to(device), labels.to(device)
+    print("Begin Eval")
+    model.eval()
+    start_time = time.time()
 
-        outputs = model(inputs)
-        predicted = (outputs > 0.5).float()
+    correct = 0
+    zeroes = 0
+    total = 0
 
-        total += labels.size(0)
-        correct += (predicted == labels).sum().item()
+    with torch.no_grad():
+        for batch, data in enumerate(dataloader):
+            inputs, labels = data
+            inputs, labels = inputs.to(device), labels.to(device)
 
-        if batch % 10000 == 0 and batch != 0:
-            ms_per_batch = (time.time() - start_time) * 1000 / batch
-            print(f'batch {batch}/{len(dataloader)} | accuracy {correct}/{total} | ms/batch {ms_per_batch}')
+            outputs = model(inputs)
 
-print(f'Accuracy: {correct}/{total} = {100 * correct / total:.2f}%')
+            total += labels.size(0)
+            correct += count_correct(outputs, labels)
+            zeroes += outputs[outputs < 0.5].shape[0]
+
+            if batch % 10000 == 0 and batch != 0:
+                ms_per_batch = (time.time() - start_time) * 1000 / batch
+                print(f'batch {batch}/{len(dataloader)} | accuracy {correct}/{total} | ms/batch {ms_per_batch}')
+
+    accuracy = correct / len(dataloader.dataset) * 100
+
+    print(f"Accuracy: {accuracy:.2f}%, Zeroes: {zeroes}")
+    print(f"------------------------------")
+
+def count_correct(outputs, labels):
+    return (outputs > 0.5).float().eq(labels).sum().item()
+
+if __name__ == "__main__":
+    args = parse_args()
+    eval(args)

@@ -106,7 +106,7 @@ def parse_args():
     parser.add_argument("--model_name", type=str, default="cache_repl_bce")
     parser.add_argument("--encoder_name", type=str, default="none")
     parser.add_argument("--dataset", type=str, default=None)
-    parser.add_argument("--use_transformer", type=bool, default=True)
+    parser.add_argument("--basic_model", action="store_true")
 
     args = parser.parse_args()
     return args

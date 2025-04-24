@@ -33,15 +33,15 @@ def train(args):
     # pos_count, neg_count = count_labels(dataloader)
     print(f"Num Prefetch PCs: {num_pcs}, Num Pages: {num_pages}")
 
-    if args.use_transformer:
-        feature_sizes = [len(dl.CACHE_IP_TO_IDX) + 1, num_pcs + 1, num_pages + 1, 65]
-        model = CacheReplacementNNJointTransformer(
-            num_features=feature_sizes, hidden_dim=args.hidden_dim
-        )
-    else:
+    if args.basic_model:
         model = CacheReplacementNN(
             num_features=args.ip_history_window + config.sequence_length * 3 + 1,
             hidden_dim=args.hidden_dim,
+        )
+    else:
+        feature_sizes = [len(dl.CACHE_IP_TO_IDX) + 1, num_pcs + 1, num_pages + 1, 65]
+        model = CacheReplacementNNJointTransformer(
+            num_features=feature_sizes, hidden_dim=args.hidden_dim
         )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -176,4 +176,4 @@ if __name__ == "__main__":
     args = parse_args()
     model = train(args)
 
-    trace_model(model, args)
+    # trace_model(model, args)

@@ -63,6 +63,8 @@ def cache_collate_fn(batch):
         torch.tensor([s] + l, dtype=torch.long) for s, l in zip(ips, ip_histories)
     ]
     features_tensor = torch.stack(combined_features, dim=0)
+    # features_tensor = torch.stack(combined_features, dim=0).float()
+    # features_tensor = torch.stack(combined_features, dim=0, dtype=torch.float32)
     labels_tensor = torch.tensor(labels, dtype=torch.float32).unsqueeze(1)
 
     return features_tensor, labels_tensor

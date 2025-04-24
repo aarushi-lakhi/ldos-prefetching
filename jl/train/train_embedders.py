@@ -29,19 +29,19 @@ def train(args):
 
     print(f"Num Prefetch PCs: {num_pcs}, Num Pages: {num_pages}")
 
-    if args.use_transformer:
-        voyager_encoder = PrefetchTransformerEncoder(
-            [num_pcs + 1, num_pages + 1, 65], args.hidden_dim, args.hidden_dim
-        )
-        cache_encoder = TransformerEncoder(
-            len(dl.CACHE_IP_TO_IDX) + 1, args.hidden_dim, args.hidden_dim
-        )
-    else:
+    if args.basic_model:
         voyager_encoder = ContrastiveEncoder(
             config.sequence_length * 3, args.hidden_dim, args.hidden_dim
         )
         cache_encoder = ContrastiveEncoder(
             args.ip_history_window + 1, args.hidden_dim, args.hidden_dim
+        )
+    else:
+        voyager_encoder = PrefetchTransformerEncoder(
+            [num_pcs + 1, num_pages + 1, 65], args.hidden_dim, args.hidden_dim
+        )
+        cache_encoder = TransformerEncoder(
+            len(dl.CACHE_IP_TO_IDX) + 1, args.hidden_dim, args.hidden_dim
         )
 
     criterion = ContrastiveLoss()

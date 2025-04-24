@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from models.contrastive_encoder import ContrastiveEncoder
+from jl.models.contrastive_encoder import ContrastiveEncoder
 
 class VoyagerEncoder(nn.Module):
     def __init__(self, config, pc_vocab_size, page_vocab_size, encoder_name=None):

@@ -159,6 +159,32 @@ class JointTransformerEncoder(nn.Module):
         return output
 
 
+    def get_attention_weights(self, cache_pc, prefetch_pc, prefetch_page, prefetch_offset):
+        # Similar to forward but captures attention weights
+        cache_pc_emb = self.cache_pc_embedding(cache_pc) * math.sqrt(self.embed_dim)
+        cache_emb = self.cache_pos_encoder(cache_pc_emb.transpose(0, 1))
+        
+        # Capturing cache transformer attention
+        attn_weights_cache = []
+        for layer in self.cache_transformer_encoder.layers:
+            cache_emb, attn_weights = layer.self_attn(cache_emb, cache_emb, cache_emb, need_weights=True)
+            attn_weights_cache.append(attn_weights)  # (num_heads, seq_len, seq_len)
+        
+        # Prefetcher processing as usual
+        prefetch_pc_emb = self.prefetch_pc_embedding(prefetch_pc) * math.sqrt(self.embed_dim)
+        prefetch_page_emb = self.prefetch_page_embedding(prefetch_page) * math.sqrt(self.embed_dim)
+        prefetch_offset_emb = self.prefetch_offset_embedding(prefetch_offset) * math.sqrt(self.embed_dim)
+        prefetch_combined_emb = prefetch_pc_emb + prefetch_page_emb + prefetch_offset_emb
+        prefetch_emb = self.prefetch_pos_encoder(prefetch_combined_emb.transpose(0, 1))
+        
+        # Capturing prefetch transformer attention
+        attn_weights_prefetch = []
+        for layer in self.prefetch_transformer_encoder.layers:
+            prefetch_emb, attn_weights = layer.self_attn(prefetch_emb, prefetch_emb, prefetch_emb, need_weights=True)
+            attn_weights_prefetch.append(attn_weights)  # (num_heads, seq_len, seq_len)
+
+        return attn_weights_cache, attn_weights_prefetch
+
 class PrefetchTransformerEncoder(nn.Module):
     def __init__(
         self,

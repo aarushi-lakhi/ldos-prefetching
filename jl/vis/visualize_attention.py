@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -15,47 +16,25 @@ def get_prefetch_attention_weights(module, input, output, prefetch_attention_wei
     prefetch_attention_weights.append(attn_output_weights.detach())
 
 
+def plot_attention_weights(attention_weights, title="Attention Weights"):
+    num_layers = len(attention_weights)
+    for layer_idx, layer_weights in enumerate(attention_weights):
+        num_heads = layer_weights.shape[0]
+        for head_idx in range(num_heads):
+            attn = layer_weights[head_idx].detach().cpu().numpy()
+            plt.figure(figsize=(8, 6))
+            sns.heatmap(attn, cmap="viridis")
+            plt.title(f"{title} - Layer {layer_idx + 1}, Head {head_idx + 1}")
+            plt.xlabel("Sequence Position")
+            plt.ylabel("Sequence Position")
+            
+            plot_filename = os.path.join("data/results/", f"{title}_Layer{layer_idx + 1}_Head{head_idx + 1}.png")
+            plt.savefig(plot_filename)
+            plt.close()  # Close the figure to avoid displaying it
+
 def visualize_joint_attention(
     model, cache_pc, prefetch_pc, prefetch_page, prefetch_offset
 ):
-    cache_attention_weights = []
-    prefetch_attention_weights = []
-
-    for layer in model.transformer_encoder.cache_transformer_encoder.layers:
-        layer.self_attn.register_forward_hook(get_cache_attention_weights)
-
-    for layer in model.transformer_encoder.prefetch_transformer_encoder.layers:
-        layer.self_attn.register_forward_hook(get_prefetch_attention_weights)
-
-    # Run forward pass
-    output = model(cache_pc, prefetch_pc, prefetch_page, prefetch_offset)
-
-    # Visualize Cache Attention Weights
-    attn_weights_cache = cache_attention_weights[
-        0
-    ]  # Shape: (batch_size * num_heads, seq_len, seq_len)
-    attn_weights_cache_mean = attn_weights_cache.mean(
-        dim=0
-    )  # Shape: (seq_len, seq_len)
-
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(attn_weights_cache_mean.numpy(), cmap="viridis")
-    plt.title("Cache Attention Weights (Averaged over Heads)")
-    plt.xlabel("Key Position")
-    plt.ylabel("Query Position")
-    plt.savefig('results/cache_attention_weights.png')
-
-    # Visualize Prefetch Attention Weights
-    attn_weights_prefetch = prefetch_attention_weights[
-        0
-    ]  # Shape: (batch_size * num_heads, seq_len, seq_len)
-    attn_weights_prefetch_mean = attn_weights_prefetch.mean(
-        dim=0
-    )  # Shape: (seq_len, seq_len)
-
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(attn_weights_prefetch_mean.numpy(), cmap="viridis")
-    plt.title("Prefetch Attention Weights (Averaged over Heads)")
-    plt.xlabel("Key Position")
-    plt.ylabel("Query Position")
-    plt.savefig('results/prefetch_attention_weights.png')
+    attn_cache, attn_prefetch = model.get_attention_weights(cache_pc, prefetch_pc, prefetch_page, prefetch_offset)
+    plot_attention_weights(attn_cache, title="Cache Attention")
+    plot_attention_weights(attn_prefetch, title="Prefetch Attention")

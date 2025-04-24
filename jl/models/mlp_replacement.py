@@ -120,3 +120,6 @@ class CacheReplacementNNJointTransformer(nn.Module):
         output = self.network(transformer_output)
         
         return output
+    
+    def get_attention_weights(self, cache_pc, prefetch_pc, prefetch_page, prefetch_offset):
+        return self.transformer_encoder.get_attention_weights(cache_pc, prefetch_pc, prefetch_page, prefetch_offset)

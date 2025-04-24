@@ -37,13 +37,13 @@ def train(args):
             hidden_dim=args.hidden_dim,
             contrastive_encoder=contrastive_encoder,
         )
-    elif args.use_transformer:
-        model = CacheReplacementNNTransformer(
-            num_features=len(dl.CACHE_IP_TO_IDX) + 1, hidden_dim=args.hidden_dim
-        )
-    else:
+    elif args.basic_model:
         model = CacheReplacementNN(
             num_features=args.ip_history_window + 1, hidden_dim=args.hidden_dim
+        )
+    else:
+        model = CacheReplacementNNTransformer(
+            num_features=len(dl.CACHE_IP_TO_IDX) + 1, hidden_dim=args.hidden_dim
         )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -151,4 +151,4 @@ if __name__ == "__main__":
     args = parse_args()
     model = train(args)
 
-    trace_model(model, args)
+    # trace_model(model, args)
