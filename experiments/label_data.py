@@ -41,7 +41,7 @@ def main():
     args = parser.parse_args()
 
     # Cache sizes
-    cache_sizes = [4096, 8192]
+    cache_sizes = [4096]
 
     # Process specific dataset if provided, otherwise process all datasets
     if args.dataset_name:

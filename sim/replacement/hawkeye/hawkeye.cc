@@ -18,13 +18,13 @@
 #include "cache.h"
 #include <map>
 
-//#define NUM_CORE 1
-//#define LLC_SETS NUM_CORE*2048
-//#define LLC_WAYS 16
-#define MAX_LLC_SETS LLC_SET
-#define LLC_WAYS LLC_WAY
-#define NUM_CORE NUM_CPUS
-#define LLC_SETS LLC_SET
+#define NUM_CORE 1
+#define LLC_SETS NUM_CORE*2048
+#define LLC_WAYS 16
+// #define MAX_LLC_SETS LLC_SET
+// #define LLC_WAYS LLC_WAY
+// #define NUM_CORE NUM_CPUS
+// #define LLC_SETS LLC_SET
 
 //3-bit RRIP counters or all lines
 #define maxRRPV 7
@@ -350,7 +350,7 @@ void PrintStats()
 
 //Vishal
 // called on every cache hit and cache fill
-void CACHE::llc_update_replacement_state(uint32_t cpu, uint32_t set, uint32_t way, uint64_t full_addr, uint64_t ip, uint64_t victim_addr, uint32_t type, uint8_t hit)
+void CACHE::update_replacement_state(uint32_t cpu, uint32_t set, uint32_t way, uint64_t full_addr, uint64_t ip, uint64_t victim_addr, uint32_t type, uint8_t hit)
 {
         UpdateReplacementState (cpu, set, way, full_addr, ip, victim_addr, type, hit);
 
@@ -361,16 +361,16 @@ void CACHE::llc_update_replacement_state(uint32_t cpu, uint32_t set, uint32_t wa
 #endif
 
 }
-void CACHE::llc_initialize_replacement()
+void CACHE::initialize_replacement()
 {
         InitReplacementState();
 }
 
-void CACHE::llc_replacement_final_stats()
+void CACHE::replacement_final_stats()
 {
 
 }
-uint32_t CACHE::llc_find_victim(uint32_t cpu, uint64_t instr_id, uint32_t set, const BLOCK *current_set, uint64_t ip, uint64_t full_addr, uint32_t type)
+uint32_t CACHE::find_victim(uint32_t cpu, uint64_t instr_id, uint32_t set, const BLOCK *current_set, uint64_t ip, uint64_t full_addr, uint32_t type)
 {
 
     uint32_t victim = GetVictimInSet(cpu,set,current_set,ip,full_addr,type);

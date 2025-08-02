@@ -1,16 +1,17 @@
 import argparse
 import csv
-from jl.data_engineering.label_min_optimized import get_beladys
+from jl.data_engineering.label_min_optimized import get_beladys_with_doa_labels
 
 def process_csv(input_file, output_file, cache_size):
-    print("Begin processing file")
+    print("Reading input...")
+
     with open(input_file, mode="r") as file:
         csv_reader = csv.DictReader(file)
         rows = list(csv_reader)
         accesses = [(int(row["full_addr"]) >> 6 << 6) for row in rows]
         accesses_set = set(accesses)
         print(f"Unique accesses: {len(accesses_set)}")
-        decisions = get_beladys(accesses, cache_size)
+        decisions = get_beladys_with_doa_labels(accesses, cache_size)
 
     print("Begin writing to output file")
     with open(output_file, mode="w", newline="") as file:
@@ -21,7 +22,7 @@ def process_csv(input_file, output_file, cache_size):
         writer.writeheader()
 
         for row, decision in zip(rows, decisions):
-            if decision == "In Cache":
+            if decision == "In Cache" or decision == None:
                 continue
             row["decision"] = decision
             writer.writerow(row)
