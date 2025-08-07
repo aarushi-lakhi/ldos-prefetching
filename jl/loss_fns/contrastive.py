@@ -8,10 +8,12 @@ class ContrastiveLoss(nn.Module):
         self.margin = margin
 
     def forward(self, output1, output2, label):
+        label = label.view(-1).float()
+
         # Calculate Euclidean distance between the output embeddings
         dist = F.pairwise_distance(output1, output2)
 
-        loss = torch.mean((label) * torch.pow(dist, 2) +
-                                (1 - label) * torch.pow(torch.clamp(self.margin - dist, min=0.0), 2))
-        
-        return loss
+        pos = label * dist.pow(2)
+        neg = (1.0 - label) * F.relu(self.margin - dist).pow(2)
+        loss = pos + neg
+        return loss.mean()

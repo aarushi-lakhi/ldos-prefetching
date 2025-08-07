@@ -12,6 +12,8 @@ from jl.dataloaders.joint_dataloader import get_joint_dataloader
 from jl.utils import parse_args, load_config
 from jl.models.contrastive_encoder import ContrastiveEncoder
 from jl.data_engineering.count_labels import count_labels
+from jl.train.early_stop import EarlyStopping
+
 import jl.dataloaders.dataloader as dl
 
 
@@ -52,6 +54,7 @@ def train(args):
     criterion = nn.BCEWithLogitsLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
     scheduler = ExponentialLR(optimizer, gamma=0.95)
+    early_stopper = EarlyStopping(patience=3, min_delta=1e-4, mode="min")
 
     print("Begin Training")
 
@@ -158,7 +161,10 @@ def train(args):
             best_loss = valid_loss
             torch.save(model.state_dict(), f"./data/model/{args.model_name}.pth")
             best_model = model
-        else:
+
+        early_stopper.step(valid_loss)
+        if early_stopper.should_stop:
+            print(f"Early-stopped at epoch {epoch+1}")
             return best_model
 
     return best_model

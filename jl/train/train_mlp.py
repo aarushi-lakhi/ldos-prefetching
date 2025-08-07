@@ -55,7 +55,7 @@ def train(args):
     criterion = nn.BCEWithLogitsLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
     scheduler = ExponentialLR(optimizer, gamma=0.95)
-    early_stopper  = EarlyStopping(patience=3, min_delta=1e-4, mode="min")
+    early_stopper = EarlyStopping(patience=3, min_delta=1e-4, mode="min")
 
     print("Begin Training")
 

@@ -9,6 +9,7 @@ from jl.models.transformer_encoder import TransformerEncoder, PrefetchTransforme
 from jl.dataloaders.contrastive_dataloader import get_contrastive_dataloader
 from jl.utils import parse_args, load_config, tqdm
 from jl.loss_fns.contrastive import ContrastiveLoss
+from jl.train.early_stop import EarlyStopping
 
 import jl.dataloaders.dataloader as dl
 
@@ -52,6 +53,8 @@ def train(args):
         cache_encoder.parameters(), lr=args.learning_rate
     )
     # scheduler = ExponentialLR(optimizer, gamma=0.95)
+
+    early_stopper = EarlyStopping(patience=3, min_delta=1e-4, mode="min")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     voyager_encoder = voyager_encoder.to(device)
@@ -165,7 +168,10 @@ def train(args):
             )
             best_voyager = voyager_encoder
             best_cache = cache_encoder
-        else:
+        
+        early_stopper.step(val_loss)
+        if early_stopper.should_stop:
+            print(f"Early-stopped at epoch {epoch+1}")
             return best_voyager, best_cache
 
     return best_voyager, best_cache

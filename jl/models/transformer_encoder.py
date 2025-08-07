@@ -53,6 +53,10 @@ class TransformerEncoder(nn.Module):
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers)
         self.fc_out = nn.Linear(embed_dim, out_dim)
 
+        nn.init.xavier_uniform_(self.embedding.weight)
+        nn.init.xavier_uniform_(self.fc_out.weight)
+        nn.init.zeros_(self.fc_out.bias)
+
     def forward(self, x):
         """
         x: Tensor of shape (batch_size, seq_len)
@@ -109,7 +113,22 @@ class JointTransformerEncoder(nn.Module):
         )
 
         # Fully connected output layer
-        self.fc_out = nn.Linear(embed_dim, out_dim)
+        self.cache_fc    = nn.Linear(embed_dim, out_dim)
+        self.prefetch_fc = nn.Linear(embed_dim, out_dim)
+
+        for emb in [
+            self.cache_pc_embedding,
+            self.prefetch_pc_embedding,
+            self.prefetch_page_embedding,
+            self.prefetch_offset_embedding,
+        ]:
+            nn.init.xavier_uniform_(emb.weight)
+
+        nn.init.xavier_uniform_(self.cache_fc.weight)
+        nn.init.zeros_(self.cache_fc.bias)
+        nn.init.xavier_uniform_(self.prefetch_fc.weight)
+        nn.init.zeros_(self.prefetch_fc.bias)
+
 
     def forward(self, cache_pc, prefetch_pc, prefetch_page, prefetch_offset):
         """
@@ -151,12 +170,10 @@ class JointTransformerEncoder(nn.Module):
 
         # Combine cache and prefetch outputs
         # Can also concatenate or use other methods
-        combined_output = cache_output + prefetch_output
+        cache_output = self.cache_fc(cache_output)
+        prefetch_output = self.prefetch_fc(prefetch_output)
 
-        # Pass through final output layer
-        output = self.fc_out(combined_output)
-
-        return output
+        return cache_output, prefetch_output
 
 
     def get_attention_weights(self, cache_pc, prefetch_pc, prefetch_page, prefetch_offset):
@@ -209,6 +226,16 @@ class PrefetchTransformerEncoder(nn.Module):
         )
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers)
         self.fc_out = nn.Linear(embed_dim, out_dim)
+
+        for emb in [
+            self.prefetch_pc_embedding,
+            self.prefetch_page_embedding,
+            self.prefetch_offset_embedding,
+        ]:
+            nn.init.xavier_uniform_(emb.weight)
+
+        nn.init.xavier_uniform_(self.fc_out.weight)
+        nn.init.zeros_(self.fc_out.bias)
 
     def forward(self, prefetch_pc, prefetch_page, prefetch_offset):
         """

@@ -102,7 +102,7 @@ class CacheReplacementNNJointTransformer(nn.Module):
         super(CacheReplacementNNJointTransformer, self).__init__()
         self.transformer_encoder = JointTransformerEncoder(num_features, hidden_dim, hidden_dim)
         self.network = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
+            nn.Linear(2 * hidden_dim, hidden_dim),
             nn.ReLU(),
             nn.Dropout(),
             nn.Linear(hidden_dim, 1),
@@ -114,11 +114,12 @@ class CacheReplacementNNJointTransformer(nn.Module):
 
     def forward(self, cache_pc, prefetch_pc, prefetch_page, prefetch_offset):
         # First, pass the multiple features through the TransformerEncoder
-        transformer_output = self.transformer_encoder(cache_pc, prefetch_pc, prefetch_page, prefetch_offset)
-        
+        cache_vec, prefetch_vec = self.transformer_encoder(cache_pc, prefetch_pc, prefetch_page, prefetch_offset)
+        combined = torch.cat([cache_vec, prefetch_vec], dim=-1)
+
         # Then pass the output from the TransformerEncoder through the rest of the network
-        output = self.network(transformer_output)
-        
+        output = self.network(combined)
+
         return output
     
     def get_attention_weights(self, cache_pc, prefetch_pc, prefetch_page, prefetch_offset):
