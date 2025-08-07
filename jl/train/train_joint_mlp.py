@@ -65,6 +65,7 @@ def train(args):
         total_loss = 0
         total_correct = 0
         train_zeroes = 0
+        total_examples = 0
         for batch, data in enumerate(dataloader):
             cache_features, prefetch_pcs, prefetch_pages, prefetch_offsets, labels = (
                 data
@@ -86,11 +87,14 @@ def train(args):
             optimizer.step()
             total_loss += loss.item()
             total_correct += count_correct(outputs, labels)
-            train_zeroes += outputs[outputs < 0.5].shape[0]
+            total_examples += labels.size(0)
+            
+            probs = torch.sigmoid(outputs)
+            train_zeroes += (probs < 0.5).sum().item()
 
             if batch % 1000 == 0 and batch != 0:
                 ms_per_batch = (time.time() - start_time) * 1000 / batch
-                acc = total_correct / (batch * args.batch_size) * 100
+                acc = total_correct / total_examples * 100
                 print(
                     f"epoch {epoch+1} | batch {batch}/{len(dataloader)} batches"
                     + f" | ms/batch {ms_per_batch} | loss {total_loss:.4f}"
@@ -138,7 +142,9 @@ def train(args):
                 loss = criterion(outputs, labels)
                 valid_loss += loss.item()
                 valid_correct += count_correct(outputs, labels)
-                valid_zeroes += outputs[outputs < 0.5].shape[0]
+                
+                probs = torch.sigmoid(outputs)
+                valid_zeroes += (probs < 0.5).sum().item()
 
         valid_loss /= len(valid_dataloader)
         valid_accuracy = valid_correct / len(valid_dataloader.dataset) * 100
@@ -158,8 +164,15 @@ def train(args):
     return best_model
 
 
-def count_correct(outputs, labels):
-    return (outputs > 0.5).float().eq(labels).sum().item()
+def count_correct(logits, labels):
+    probs   = torch.sigmoid(logits)          # convert logits → probability
+    preds   = (probs > 0.5).float()          # threshold at 0.5
+    correct = preds.eq(labels).sum().item()  # count matches
+    return correct
+
+
+# def count_correct(outputs, labels):
+#     return (outputs > 0.5).float().eq(labels).sum().item()
 
 
 def trace_model(model, args):
