@@ -1,0 +1,60 @@
+===============================================================================
+EVAL START  : 2025-08-20 03:20:06
+DATASET_ID  : 620.omnetpp_s-874B_sm
+FAMILY      : omnetpp_sm
+GPU         : 0
+IP_WINDOW   : 15
+BATCH_SIZE  : 256
+CTX         : 4096
+LOG FILE    : eval_logs/20250820_032006_620.omnetpp_s-874B_sm.eval.log
+===============================================================================
+
+[620.omnetpp_s-874B_sm] (2025-08-20 03:20:06) STEP 1/3: eval_mlp  --model_name='transformer_mlp_omnetpp_sm' --dataset='transformer_mlp_omnetpp_sm_4096'
+/home/syuan/miniconda3/lib/python3.12/site-packages/torch/nn/modules/transformer.py:286: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.self_attn.batch_first was not True(use batch_first for better inference performance)
+  warnings.warn(f"enable_nested_tensor is True, but self.use_nested_tensor is False because {why_not_sparsity_fast_path}")
+------------------------------
+Config: dim 12 window 15
+Init Dataloader
+Dataset size: 2328664
+Cache IP size: 1505
+Using device: cuda
+Begin Eval
+Accuracy: 91.97%, Zeroes: 15212
+------------------------------
+[620.omnetpp_s-874B_sm] (2025-08-20 03:20:24) STEP 1/3 DONE (rc=0)
+
+[620.omnetpp_s-874B_sm] (2025-08-20 03:20:24) STEP 2/3: eval_joint_mlp  --model_name='transformer_joint_omnetpp_sm' --dataset='transformer_joint_omnetpp_sm_4096'
+/home/syuan/miniconda3/lib/python3.12/site-packages/torch/nn/modules/transformer.py:286: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.self_attn.batch_first was not True(use batch_first for better inference performance)
+  warnings.warn(f"enable_nested_tensor is True, but self.use_nested_tensor is False because {why_not_sparsity_fast_path}")
+------------------------------
+Config: dim 12 window 15
+Init Dataloader
+Loading dataset transformer_joint_omnetpp_sm_4096 from disk
+Dataset size: 2328376
+Num Prefetch PCs: 4788, Num Pages: 64013
+Using device: cuda
+Accuracy: 92.13%, Zeroes: 6923
+------------------------------
+[620.omnetpp_s-874B_sm] (2025-08-20 03:22:00) STEP 2/3 DONE (rc=0)
+
+[620.omnetpp_s-874B_sm] (2025-08-20 03:22:00) STEP 3/3: eval_mlp (encoder cache)  --model_name='embedder_mlp_omnetpp_sm' --dataset='simple_mlp_omnetpp_sm_4096' --encoder_name='omnetpp_sm_encoder_cache'
+/home/syuan/miniconda3/lib/python3.12/site-packages/torch/nn/modules/transformer.py:286: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.self_attn.batch_first was not True(use batch_first for better inference performance)
+  warnings.warn(f"enable_nested_tensor is True, but self.use_nested_tensor is False because {why_not_sparsity_fast_path}")
+------------------------------
+Config: dim 12 window 15
+Init Dataloader
+Dataset size: 2328664
+Cache IP size: 1505
+Using device: cuda
+Begin Eval
+Accuracy: 91.81%, Zeroes: 11682
+------------------------------
+[620.omnetpp_s-874B_sm] (2025-08-20 03:22:18) STEP 3/3 DONE (rc=0)
+
+===============================================================================
+EVAL END    : 2025-08-20 03:22:18
+RET CODES   : step1=0 step2=0 step3=0
+STATUS      : SUCCESS
+LOG SAVED   : eval_logs/20250820_032006_620.omnetpp_s-874B_sm.eval.log
+===============================================================================
+

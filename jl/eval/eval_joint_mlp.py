@@ -58,9 +58,6 @@ def eval(args):
     zeroes = 0
     total = 0
 
-    attn_cache_total = []
-    attn_prefetch_total = []
-
     with torch.no_grad():
         for batch, data in enumerate(dataloader):
             cache_features, prefetch_pcs, prefetch_pages, prefetch_offsets, labels = (
@@ -80,15 +77,18 @@ def eval(args):
 
             total += labels.size(0)
             correct += count_correct(outputs, labels)
-            zeroes += outputs[outputs < 0.5].shape[0]
 
-            if (labels.size(0) == args.batch_size):
-                attn_cache, attn_prefetch = model.get_attention_weights(
-                    cache_features, prefetch_pcs, prefetch_pages, prefetch_offsets
-                )
-                # Accumulate attention weights
-                attn_cache_total.append(torch.stack(attn_cache))
-                attn_prefetch_total.append(torch.stack(attn_prefetch))
+            probs = torch.sigmoid(outputs)
+            zeroes += (probs < 0.5).sum().item()
+
+
+            # if (labels.size(0) == args.batch_size):
+            #     attn_cache, attn_prefetch = model.get_attention_weights(
+            #         cache_features, prefetch_pcs, prefetch_pages, prefetch_offsets
+            #     )
+            #     # Accumulate attention weights
+            #     attn_cache_total.append(torch.stack(attn_cache))
+            #     attn_prefetch_total.append(torch.stack(attn_prefetch))
 
             if batch % 10000 == 0 and batch != 0:
                 ms_per_batch = (time.time() - start_time) * 1000 / batch
@@ -101,10 +101,10 @@ def eval(args):
     print(f"Accuracy: {accuracy:.2f}%, Zeroes: {zeroes}")
     print(f"------------------------------")
 
-    avg_attn_cache = torch.mean(torch.stack(attn_cache_total), dim=0)
-    avg_attn_prefetch = torch.mean(torch.stack(attn_prefetch_total), dim=0)
-    plot_attention_weights(avg_attn_cache, title="Cache Attention")
-    plot_attention_weights(avg_attn_prefetch, title="Prefetch Attention")
+    # avg_attn_cache = torch.mean(torch.stack(attn_cache_total), dim=0)
+    # avg_attn_prefetch = torch.mean(torch.stack(attn_prefetch_total), dim=0)
+    # plot_attention_weights(avg_attn_cache, title="Cache Attention")
+    # plot_attention_weights(avg_attn_prefetch, title="Prefetch Attention")
 
     # Visualize attention weights
     # if not args.basic_model:
@@ -139,9 +139,11 @@ def eval(args):
     #     )
 
 
-def count_correct(outputs, labels):
-    return (outputs > 0.5).float().eq(labels).sum().item()
-
+def count_correct(logits, labels):
+    probs   = torch.sigmoid(logits)          # convert logits → probability
+    preds   = (probs > 0.5).float()          # threshold at 0.5
+    correct = preds.eq(labels).sum().item()  # count matches
+    return correct
 
 if __name__ == "__main__":
     args = parse_args()

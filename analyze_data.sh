@@ -40,11 +40,9 @@ run_pair () {
 # Main execution sequence              #
 ########################################
 datasets=(
-  470.lbm-1274B_sm
-  401.bzip2-226B_sm
-  437.leslie3d-232B_sm
-  623.xalancbmk_s-10B_sm
-  623.xalancbmk_s-165B_sm
+  620.omnetpp_s-874B_sm
+  436.cactusADM-1804B_sm
+  605.mcf_s-782B_lg
 )
 
 for ds in "${datasets[@]}"; do

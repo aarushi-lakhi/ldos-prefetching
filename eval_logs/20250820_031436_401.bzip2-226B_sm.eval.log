@@ -1,0 +1,60 @@
+===============================================================================
+EVAL START  : 2025-08-20 03:14:36
+DATASET_ID  : 401.bzip2-226B_sm
+FAMILY      : bzip2_sm
+GPU         : 0
+IP_WINDOW   : 15
+BATCH_SIZE  : 256
+CTX         : 4096
+LOG FILE    : eval_logs/20250820_031436_401.bzip2-226B_sm.eval.log
+===============================================================================
+
+[401.bzip2-226B_sm] (2025-08-20 03:14:36) STEP 1/3: eval_mlp  --model_name='transformer_mlp_bzip2_sm' --dataset='transformer_mlp_bzip2_sm_4096'
+/home/syuan/miniconda3/lib/python3.12/site-packages/torch/nn/modules/transformer.py:286: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.self_attn.batch_first was not True(use batch_first for better inference performance)
+  warnings.warn(f"enable_nested_tensor is True, but self.use_nested_tensor is False because {why_not_sparsity_fast_path}")
+------------------------------
+Config: dim 12 window 15
+Init Dataloader
+Dataset size: 732420
+Cache IP size: 321
+Using device: cuda
+Begin Eval
+Accuracy: 88.72%, Zeroes: 22260
+------------------------------
+[401.bzip2-226B_sm] (2025-08-20 03:14:43) STEP 1/3 DONE (rc=0)
+
+[401.bzip2-226B_sm] (2025-08-20 03:14:43) STEP 2/3: eval_joint_mlp  --model_name='transformer_joint_bzip2_sm' --dataset='transformer_joint_bzip2_sm_4096'
+/home/syuan/miniconda3/lib/python3.12/site-packages/torch/nn/modules/transformer.py:286: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.self_attn.batch_first was not True(use batch_first for better inference performance)
+  warnings.warn(f"enable_nested_tensor is True, but self.use_nested_tensor is False because {why_not_sparsity_fast_path}")
+------------------------------
+Config: dim 12 window 15
+Init Dataloader
+Loading dataset transformer_joint_bzip2_sm_4096 from disk
+Dataset size: 731425
+Num Prefetch PCs: 858, Num Pages: 2233
+Using device: cuda
+Accuracy: 88.71%, Zeroes: 22123
+------------------------------
+[401.bzip2-226B_sm] (2025-08-20 03:16:00) STEP 2/3 DONE (rc=0)
+
+[401.bzip2-226B_sm] (2025-08-20 03:16:00) STEP 3/3: eval_mlp (encoder cache)  --model_name='embedder_mlp_bzip2_sm' --dataset='simple_mlp_bzip2_sm_4096' --encoder_name='bzip2_sm_encoder_cache'
+/home/syuan/miniconda3/lib/python3.12/site-packages/torch/nn/modules/transformer.py:286: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.self_attn.batch_first was not True(use batch_first for better inference performance)
+  warnings.warn(f"enable_nested_tensor is True, but self.use_nested_tensor is False because {why_not_sparsity_fast_path}")
+------------------------------
+Config: dim 12 window 15
+Init Dataloader
+Dataset size: 732420
+Cache IP size: 321
+Using device: cuda
+Begin Eval
+Accuracy: 88.72%, Zeroes: 22255
+------------------------------
+[401.bzip2-226B_sm] (2025-08-20 03:16:07) STEP 3/3 DONE (rc=0)
+
+===============================================================================
+EVAL END    : 2025-08-20 03:16:07
+RET CODES   : step1=0 step2=0 step3=0
+STATUS      : SUCCESS
+LOG SAVED   : eval_logs/20250820_031436_401.bzip2-226B_sm.eval.log
+===============================================================================
+
