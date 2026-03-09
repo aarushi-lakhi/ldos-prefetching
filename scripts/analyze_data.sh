@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+cd "$(dirname "$0")/.."
 # run_experiments.sh — continue even if a step fails
 set -uo pipefail          # ← no “-e”  ➜ don’t abort on errors
 
@@ -30,10 +31,10 @@ run_pair () {
   local analysis="${dataset}_cs_4096"
 
   run_step "${dataset}_label" \
-           python experiments/label_data.py --dataset_name "$dataset"
+           python joint-learner/experiments/label_data.py --dataset_name "$dataset"
 
   run_step "${dataset}_analyze" \
-           python experiments/analyze_data.py "$analysis"
+           python joint-learner/experiments/analyze_data.py "$analysis"
 }
 
 ########################################
