@@ -5,4 +5,8 @@ __pycache__/
 nohup.out
 output.log
 logs/
+
 /scripts/api_key.py
+
+/venv
+get-pip.py
