@@ -1,0 +1,218 @@
+{
+  "timestamp": "2026-04-01T18:39:25.878894",
+  "model": "claude-haiku4.5",
+  "iterations_run": 15,
+  "dataset": "datasets/perlbench_train_70.csv",
+  "target_col": "decision",
+  "best": {
+    "final_fitness": 0.2828,
+    "code": "hit_val = row['hit']\ntype_val = row['type']\nway_val = row['way']\nset_val = row['set']\nfull_addr = row['full_addr']\nvictim_addr = row['victim_addr']\ntimestamp = row['timestamp']\nip_val = row['ip']\n\nscore = 0.0\n\n# Core: hits are cache-friendly\nif hit_val == 1:\n    score += 2.0\nelse:\n    score -= 1.0\n\n# Demand vs prefetch: demand (0,1) much more valuable\nif type_val in (0, 1):\n    score += 1.0\nelif type_val == 2:\n    score -= 1.5\n\n# Way position in set: lower way = more recently used (LRU), keep it\nif way_val < 4:\n    score += 0.5\nelse:\n    score -= 0.3\n\n# Address locality: victim far from current suggests good spatial separation\naddr_delta = abs(full_addr - victim_addr)\nif addr_delta > (1 << 16):\n    score += 0.4\nelif addr_delta < (1 << 10):\n    score -= 0.3\n\n# Page-level reuse: same page as IP suggests temporal locality\nip_page = ip_val >> 12\naddr_page = full_addr >> 12\nvictim_page = victim_addr >> 12\n\nif addr_page == ip_page:\n    score += 0.6\nelif addr_page == victim_page:\n    score -= 0.4\n\n# Set-way interaction: way position relative to set occupancy\nset_offset = (set_val + way_val) % 8\nif set_offset < 3:\n    score += 0.2\n\n# Negative score for prefetch misses (low temporal reuse)\nif type_val == 2 and hit_val == 0:\n    score -= 0.8\n\nreturn score",
+    "metrics": {
+      "accuracy": 0.9257,
+      "f1": 0.9614,
+      "n_constants": 29,
+      "complexity_penalty": 0.2941,
+      "final_fitness": 0.2828,
+      "n_samples": 65975,
+      "errors": 0
+    },
+    "iteration": 11
+  },
+  "history": [
+    {
+      "iteration": 1,
+      "metrics": {
+        "accuracy": 0.0357,
+        "f1": 0.0046,
+        "n_constants": 25,
+        "complexity_penalty": 0.3333,
+        "final_fitness": 0.0015,
+        "n_samples": 65975,
+        "errors": 0
+      },
+      "hash": "45fb001bd4"
+    },
+    {
+      "iteration": 2,
+      "metrics": {
+        "accuracy": 0.326,
+        "f1": 0.4749,
+        "n_constants": 26,
+        "complexity_penalty": 0.3226,
+        "final_fitness": 0.1532,
+        "n_samples": 65975,
+        "errors": 0
+      },
+      "hash": "ecab138df3"
+    },
+    {
+      "iteration": 3,
+      "metrics": {
+        "accuracy": 0.0338,
+        "f1": 0.0,
+        "n_constants": 28,
+        "complexity_penalty": 0.303,
+        "final_fitness": 0.0,
+        "n_samples": 65975,
+        "errors": 0
+      },
+      "hash": "d2c176f163"
+    },
+    {
+      "iteration": 4,
+      "metrics": {
+        "accuracy": 0.0338,
+        "f1": 0.0,
+        "n_constants": 21,
+        "complexity_penalty": 0.3846,
+        "final_fitness": 0.0,
+        "n_samples": 65975,
+        "errors": 0
+      },
+      "hash": "8e9e879a79"
+    },
+    {
+      "iteration": 5,
+      "metrics": {
+        "accuracy": 0.0338,
+        "f1": 0.0,
+        "n_constants": 27,
+        "complexity_penalty": 0.3125,
+        "final_fitness": 0.0,
+        "n_samples": 65975,
+        "errors": 0
+      },
+      "hash": "67525174b8"
+    },
+    {
+      "iteration": 6,
+      "metrics": {
+        "accuracy": 0.1091,
+        "f1": 0.158,
+        "n_constants": 20,
+        "complexity_penalty": 0.4,
+        "final_fitness": 0.0632,
+        "n_samples": 65975,
+        "errors": 0
+      },
+      "hash": "79e3d03977"
+    },
+    {
+      "iteration": 7,
+      "metrics": {
+        "accuracy": 0.0338,
+        "f1": 0.0,
+        "n_constants": 19,
+        "complexity_penalty": 0.4167,
+        "final_fitness": 0.0,
+        "n_samples": 65975,
+        "errors": 0
+      },
+      "hash": "cd59ec4a67"
+    },
+    {
+      "iteration": 8,
+      "metrics": {
+        "accuracy": 0.5711,
+        "f1": 0.7268,
+        "n_constants": 25,
+        "complexity_penalty": 0.3333,
+        "final_fitness": 0.2423,
+        "n_samples": 65975,
+        "errors": 0
+      },
+      "hash": "3895269c93"
+    },
+    {
+      "iteration": 9,
+      "metrics": {
+        "accuracy": 0.0338,
+        "f1": 0.0,
+        "n_constants": 25,
+        "complexity_penalty": 0.3333,
+        "final_fitness": 0.0,
+        "n_samples": 65975,
+        "errors": 65975
+      },
+      "hash": "9d1b6118f9"
+    },
+    {
+      "iteration": 10,
+      "metrics": {
+        "accuracy": 0.0338,
+        "f1": 0.0,
+        "n_constants": 24,
+        "complexity_penalty": 0.3448,
+        "final_fitness": 0.0,
+        "n_samples": 65975,
+        "errors": 65975
+      },
+      "hash": "efe5de22f9"
+    },
+    {
+      "iteration": 11,
+      "metrics": {
+        "accuracy": 0.9257,
+        "f1": 0.9614,
+        "n_constants": 29,
+        "complexity_penalty": 0.2941,
+        "final_fitness": 0.2828,
+        "n_samples": 65975,
+        "errors": 0
+      },
+      "hash": "1f61f2b95c"
+    },
+    {
+      "iteration": 12,
+      "metrics": {
+        "accuracy": 0.0338,
+        "f1": 0.0,
+        "n_constants": 25,
+        "complexity_penalty": 0.3333,
+        "final_fitness": 0.0,
+        "n_samples": 65975,
+        "errors": 65975
+      },
+      "hash": "1e5cb0a955"
+    },
+    {
+      "iteration": 13,
+      "metrics": {
+        "accuracy": 0.0641,
+        "f1": 0.0658,
+        "n_constants": 31,
+        "complexity_penalty": 0.2778,
+        "final_fitness": 0.0183,
+        "n_samples": 65975,
+        "errors": 0
+      },
+      "hash": "064a46ff1e"
+    },
+    {
+      "iteration": 14,
+      "metrics": {
+        "accuracy": 0.0564,
+        "f1": 0.0459,
+        "n_constants": 28,
+        "complexity_penalty": 0.303,
+        "final_fitness": 0.0139,
+        "n_samples": 65975,
+        "errors": 0
+      },
+      "hash": "e102b592a5"
+    },
+    {
+      "iteration": 15,
+      "metrics": {
+        "accuracy": 0.0348,
+        "f1": 0.0019,
+        "n_constants": 29,
+        "complexity_penalty": 0.2941,
+        "final_fitness": 0.0006,
+        "n_samples": 65975,
+        "errors": 0
+      },
+      "hash": "ab4c78b455"
+    }
+  ]
+}
