@@ -47,10 +47,12 @@ Available features in `row` (pandas Series):
   row['way']             – Cache way currently holding this line (int)
   row['full_addr']       – Full 64-bit memory address (int)
   row['ip']              – Instruction Pointer / Program Counter (int)
-  row['victim_addr']     – Address of the line that would be evicted (int)
   row['type']            – Access type: 0=LOAD 1=RFO 2=PREFETCH 3=WRITE 4=TRANSLATION
-  row['hit']             – 1 if this access was a cache hit, 0 if miss
   row['timestamp']       – Microsecond wall-clock timestamp of the access (int)
+
+BANNED FEATURES — accessing these causes IMMEDIATE DISQUALIFICATION (fitness = 0):
+  row['hit']             — BANNED: leaks whether the line is already cached
+  row['victim_addr']     — BANNED: not available to a real replacement policy
 
 Label semantics (do NOT use in the heuristic):
   decision = 1  → Belady OPT says KEEP this line (cache-friendly)  [~97 % of rows]
@@ -76,12 +78,28 @@ SYSTEM_PROMPT = textwrap.dedent("""\
 
     {feature_doc}
 
+    DOMAIN KNOWLEDGE (from prior statistical analysis)
+    ---------------------------------------------------
+    R² feature importance ranking for cache-reuse prediction on this workload:
+      1. ip        (instruction pointer)  — highest correlation with reuse
+      2. full_addr (memory address)       — second highest correlation
+      3. type      (access type)          — moderate signal
+      4. set / way                        — low but useful structural signal
+      5. triggering_cpu / timestamp       — minimal signal
+    Focus primarily on the RELATIONSHIP between ip and full_addr (e.g., page
+    alignment, address-delta, or bitwise overlap).  Heuristics built around
+    ip and full_addr generalise far better than those based on type alone.
+
     CONTRACT
     --------
     • Return a single numeric score.
     • POSITIVE score  →  predict cache-friendly  (label = 1, keep the line)
     • ZERO / NEGATIVE →  predict cache-averse    (label = 0, evict the line)
     • Access features via row['feature_name'].
+    • NEVER use row['hit'] or row['victim_addr'] — they are BANNED and will
+      cause your submission to be IMMEDIATELY REJECTED with fitness = 0.
+    • Your heuristic MUST predict BOTH classes (evict AND keep).
+      Predicting only one class gives fitness = 0, regardless of accuracy.
     • No imports, no print statements.
     • Minimise hardcoded magic numbers — each extra constant beyond 5
       reduces your Final Fitness score by 10 %.  Prefer relational logic.
@@ -134,6 +152,29 @@ def _is_low_diversity(history: list, window: int) -> bool:
     return len(set(map(frozenset, feature_sets))) == 1
 
 
+SEED_HEURISTIC = textwrap.dedent("""\
+    def heuristic(row):
+        # Features available: ip, full_addr, type, set, way
+        # Goal: Return a positive score to keep the line, negative to evict.
+        score = 0.0
+
+        # Basic intuition: Loads (type 0) and RFOs (type 1) are often reused.
+        if row['type'] == 0 or row['type'] == 1:
+            score += 1.0
+        else:
+            score -= 1.0
+
+        # Check if the memory address is on the same page as the instruction pointer.
+        # This indicates strong spatial locality (code and data are near each other).
+        ip_page   = row['ip']       >> 12
+        addr_page = row['full_addr'] >> 12
+        if ip_page == addr_page:
+            score += 2.0
+
+        return score
+    """)
+
+
 def _build_prompt(
     feedback: str,
     prev_code: str | None,
@@ -142,10 +183,20 @@ def _build_prompt(
 ) -> str:
     parts = [SYSTEM_PROMPT.format(feature_doc=FEATURE_DOC)]
 
-    if iteration > 1 and feedback:
+    if iteration == 1:
+        parts.append(
+            "\n--- SMART SEED HEURISTIC (Iteration 1) ---\n"
+            "Here is a carefully designed starting heuristic that already predicts "
+            "BOTH classes.  For your first iteration, keep this logic intact and ADD "
+            "exactly one new conditional branch that uses the `set` or `way` feature "
+            "to further distinguish cache-averse from cache-friendly accesses.  "
+            "Do NOT simplify or remove the existing logic.\n"
+            f"```python\n{SEED_HEURISTIC}```\n"
+        )
+    elif feedback:
         parts.append(f"\n--- FEEDBACK FROM PREVIOUS ITERATION ---\n{feedback}\n")
 
-    if prev_code:
+    if prev_code and iteration > 1:
         parts.append(
             f"\n--- PREVIOUS HEURISTIC (for reference only) ---\n"
             f"```python\n{prev_code}\n```\n"
@@ -156,11 +207,11 @@ def _build_prompt(
             "\n⚠️  DIVERSITY ALERT: Your last several heuristics used the same "
             "features and appear to be minor variations of each other.  "
             "Please explore a FUNDAMENTALLY DIFFERENT strategy.  Ideas:\n"
-            "  • Bitwise address-page analysis (full_addr >> N)\n"
-            "  • Combining hit/miss history with instruction type\n"
-            "  • Set-occupancy reasoning via `set` and `way`\n"
-            "  • Victim-address delta vs current address\n"
-            "  • Timestamp-based recency proxy\n"
+            "  • Page-number relationship: (row['ip'] >> 12) vs (row['full_addr'] >> 12)\n"
+            "  • Address-delta reasoning: row['full_addr'] % (row['set'] + 1)\n"
+            "  • Set-occupancy proxy via row['set'] and row['way'] together\n"
+            "  • Bitwise overlap between ip and full_addr low-order bits\n"
+            "  • Timestamp-based recency: row['timestamp'] % some_expression\n"
         )
 
     parts.append(
@@ -174,12 +225,17 @@ def _format_feedback(iteration: int, metrics: dict) -> str:
     """Convert an evaluation result dict into a natural-language feedback string."""
     lines = [
         f"Iteration {iteration} scores:",
-        f"  Accuracy          : {metrics['accuracy']:.4f}",
-        f"  F1 Score          : {metrics['f1']:.4f}",
+        f"  Balanced Accuracy  : {metrics['balanced_accuracy']:.4f}"
+        f"  [= avg(Cache-Averse accuracy, Cache-Friendly accuracy)]",
+        f"  Precision          : {metrics['precision']:.4f}",
+        f"  Recall             : {metrics['recall']:.4f}",
+        f"  F1 Score           : {metrics['f1']:.4f}",
+        f"  Cache-Averse  Accuracy (class 0): {metrics['acc_class0']:.4f}",
+        f"  Cache-Friendly Accuracy (class 1): {metrics['acc_class1']:.4f}",
         f"  Hardcoded constants: {metrics['n_constants']}  "
         f"(threshold = 5; penalty factor = {metrics['complexity_penalty']:.4f})",
-        f"  ► Final Fitness   : {metrics['final_fitness']:.4f}  "
-        f"  [= F1 × complexity_penalty]",
+        f"  ► Final Fitness    : {metrics['final_fitness']:.4f}  "
+        f"  [= Balanced Accuracy × complexity_penalty]",
     ]
 
     if metrics["errors"] > 0:
@@ -190,28 +246,64 @@ def _format_feedback(iteration: int, metrics: dict) -> str:
         )
 
     # Qualitative hints
-    if metrics["n_constants"] > CONSTANT_THRESHOLD:
-        excess = metrics["n_constants"] - CONSTANT_THRESHOLD
+    n_consts = metrics["n_constants"]
+    if n_consts > CONSTANT_THRESHOLD:
+        excess = n_consts - CONSTANT_THRESHOLD
         loss   = 1.0 - metrics["complexity_penalty"]
         lines.append(
-            f"\n  Constants penalty: {excess} extra constant(s) cost you "
-            f"{loss:.1%} of your fitness.  Use relational logic instead."
+            f"\n  CONSTANTS PENALTY: You used {n_consts} hardcoded numeric constants "
+            f"({excess} over the limit of {CONSTANT_THRESHOLD}).  "
+            f"This cost you {loss:.1%} of your fitness score.\n"
+            f"  You MUST replace magic numbers with relational logic.  Examples:\n"
+            f"    BAD : if row['type'] == 2 and row['way'] > 4\n"
+            f"    GOOD: ip_page = row['ip'] >> 12; addr_page = row['full_addr'] >> 12\n"
+            f"          if ip_page == addr_page:  # no magic numbers — pure relation\n"
+            f"  If you reduce to fewer than {CONSTANT_THRESHOLD} constants, "
+            f"your complexity penalty disappears and your score will improve significantly."
+        )
+    elif n_consts > 0:
+        lines.append(
+            f"\n  Constants used: {n_consts} (within the limit of {CONSTANT_THRESHOLD} — no penalty)."
         )
 
-    if metrics["f1"] < 0.35:
+    # ── Majority/minority trap detection ─────────────────────────────────
+    acc0 = metrics["acc_class0"]
+    acc1 = metrics["acc_class1"]
+    trap_evict_all = acc0 > 0.95 and acc1 < 0.05   # predicted all-0
+    trap_keep_all  = acc1 > 0.95 and acc0 < 0.05   # predicted all-1
+
+    if trap_evict_all or trap_keep_all:
+        which = "EVICT EVERYTHING (all class 0)" if trap_evict_all else "KEEP EVERYTHING (all class 1)"
         lines.append(
-            "\n  The F1 is very low.  The current approach may be predicting "
-            "one class almost exclusively — try a different strategy entirely."
+            f"\n  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+            f"\n  MAJORITY-CLASS TRAP DETECTED — Final Fitness = 0.0"
+            f"\n  Your heuristic predicted {which}."
+            f"\n  This is completely useless — a real cache policy must"
+            f"\n  decide WHICH lines to evict, not blindly evict or keep all."
+            f"\n  FINAL FITNESS IS ZERO UNTIL YOU PREDICT BOTH CLASSES."
+            f"\n  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+            f"\n"
+            f"\n  You MUST write logic that sometimes returns a POSITIVE score"
+            f"\n  (predict keep) AND sometimes returns a NEGATIVE/ZERO score"
+            f"\n  (predict evict).  Start with a conditional branch, e.g.:"
+            f"\n    if row['type'] == 2:   # PREFETCH — likely less useful"
+            f"\n        return -1.0"
+            f"\n    return row['ip'] % 3 - 1  # mix of positive and negative"
         )
-    elif metrics["f1"] < 0.55:
+    elif acc0 < 0.10:
         lines.append(
-            "\n  F1 is modest.  Consider whether combining multiple features "
-            "with additive weights or conditional branches could help."
+            "\n  WARNING: Cache-Averse accuracy is very low — you are rarely"
+            " predicting evictions.  Add more conditions that return negative scores."
+        )
+    elif metrics["balanced_accuracy"] < 0.55:
+        lines.append(
+            "\n  Balanced Accuracy is below 0.55.  Try combining type, ip, set, "
+            "full_addr, or timestamp with conditional logic to separate the classes."
         )
     else:
         lines.append(
-            "\n  Good F1.  Focus on reducing constants or refining edge cases "
-            "to push further."
+            "\n  Good Balanced Accuracy.  Focus on reducing constants or refining "
+            "edge cases to push both class accuracies higher."
         )
 
     return "\n".join(lines)
@@ -228,7 +320,7 @@ CONSTANT_THRESHOLD = 5
 def run_pipeline(
     model_name:       str  = "claude-haiku4.5",
     n_iterations:     int  = 10,
-    csv_path:         str  = "datasets/perlbench_train_70.csv",
+    csv_path:         str  = "datasets/mcf_train_70.csv",
     target_col:       str  = "decision",
     diversity_window: int  = 3,
     results_path:     str  = "scripts/pipeline_results.json",
@@ -286,17 +378,31 @@ def run_pipeline(
 
         if "error" in metrics:
             print(f"  [ERROR] Evaluator: {metrics['error']}")
-            feedback = (
-                f"Iteration {i}: Your heuristic could not be evaluated.\n"
-                f"Error: {metrics['error']}\n"
-                "Please write syntactically valid Python that returns a number."
-            )
+            if "BANNED FEATURES" in metrics["error"]:
+                feedback = (
+                    f"Iteration {i}: SUBMISSION REJECTED — banned features detected.\n"
+                    f"{metrics['error']}\n\n"
+                    "You are FORBIDDEN from using row['hit'] or row['victim_addr'].\n"
+                    "These are inadmissible — a deployed policy cannot access them.\n"
+                    "Rewrite your heuristic using ONLY: "
+                    "triggering_cpu, set, way, full_addr, ip, type, timestamp."
+                )
+            else:
+                feedback = (
+                    f"Iteration {i}: Your heuristic could not be evaluated.\n"
+                    f"Error: {metrics['error']}\n"
+                    "Please write syntactically valid Python that returns a number."
+                )
         else:
-            print(f"  Accuracy         : {metrics['accuracy']:.4f}")
-            print(f"  F1 Score         : {metrics['f1']:.4f}")
-            print(f"  Constants (#)    : {metrics['n_constants']}")
+            print(f"  Balanced Accuracy : {metrics['balanced_accuracy']:.4f}")
+            print(f"  Precision         : {metrics['precision']:.4f}")
+            print(f"  Recall            : {metrics['recall']:.4f}")
+            print(f"  F1 Score          : {metrics['f1']:.4f}")
+            print(f"  Cache-Averse  Acc : {metrics['acc_class0']:.4f}  (class 0)")
+            print(f"  Cache-Friendly Acc: {metrics['acc_class1']:.4f}  (class 1)")
+            print(f"  Constants (#)     : {metrics['n_constants']}")
             print(f"  Complexity penalty: {metrics['complexity_penalty']:.4f}")
-            print(f"  ► Final Fitness  : {metrics['final_fitness']:.4f}")
+            print(f"  ► Final Fitness   : {metrics['final_fitness']:.4f}")
 
             if metrics["final_fitness"] > best["final_fitness"]:
                 best = {
@@ -324,11 +430,15 @@ def run_pipeline(
 
     if best["code"] is not None:
         m = best["metrics"]
-        print(f"  Best iteration : {best['iteration']}")
-        print(f"  Final Fitness  : {best['final_fitness']:.4f}")
-        print(f"  Accuracy       : {m['accuracy']:.4f}")
-        print(f"  F1 Score       : {m['f1']:.4f}")
-        print(f"  Constants      : {m['n_constants']}")
+        print(f"  Best iteration    : {best['iteration']}")
+        print(f"  Final Fitness     : {best['final_fitness']:.4f}")
+        print(f"  Balanced Accuracy : {m['balanced_accuracy']:.4f}")
+        print(f"  Precision         : {m['precision']:.4f}")
+        print(f"  Recall            : {m['recall']:.4f}")
+        print(f"  F1 Score          : {m['f1']:.4f}")
+        print(f"  Cache-Averse  Acc : {m['acc_class0']:.4f}  (class 0)")
+        print(f"  Cache-Friendly Acc: {m['acc_class1']:.4f}  (class 1)")
+        print(f"  Constants         : {m['n_constants']}")
         print(f"\nBest heuristic body:\n")
         print(textwrap.indent(best["code"], "    "))
     else:
@@ -378,7 +488,7 @@ def _parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--csv",
-        default="datasets/perlbench_train_70.csv",
+        default="datasets/mcf_train_70.csv",
         help="Path to the training CSV (relative to project root)",
     )
     p.add_argument(
