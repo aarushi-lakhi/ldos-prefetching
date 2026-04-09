@@ -3,15 +3,30 @@ evaluator.py  —  Black-Box Fitness Evaluator for Cache-Replacement Heuristics
 
 Accepts a dynamically-generated Python heuristic string, applies it to the
 training CSV, and returns a Final Fitness Score that combines predictive
-performance (F1) with a complexity penalty for over-reliance on hardcoded
-constants (to guard against brittle, overfit heuristics).
+performance (Balanced Accuracy) with a complexity penalty for over-reliance
+on hardcoded constants (to guard against brittle, overfit heuristics).
+
+Metrics reported (all skew-robust):
+  balanced_accuracy  — average of per-class recall; immune to majority-class trap
+  precision          — TP / (TP + FP) for class 1
+  recall             — TP / (TP + FN) for class 1
+  f1                 — harmonic mean of precision & recall for class 1
+  acc_class0         — accuracy among cache-averse  rows (true label = 0)
+  acc_class1         — accuracy among cache-friendly rows (true label = 1)
+  final_fitness      — balanced_accuracy × complexity_penalty
 """
 
 import ast
+import re
 import textwrap
 import pandas as pd
 import numpy as np
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import (
+    balanced_accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+)
 
 # ── Defaults (can be overridden at call time) ──────────────────────────────
 DEFAULT_CSV  = "datasets/perlbench_train_70.csv"
@@ -21,6 +36,18 @@ TARGET_COL   = "decision"   # actual column written by analyze_data.py (0/1)
 # Each constant beyond that reduces the penalty factor by 0.10.
 CONSTANT_THRESHOLD = 5
 PENALTY_STEP       = 0.10   # 10 % reduction per extra constant
+
+# ── Banned features (leakage / inadmissible) ──────────────────────────────
+# 'hit'        — directly encodes whether the line is already useful; trivially
+#                leaks the answer and produces unrealisable policies.
+# 'victim_addr'— the eviction candidate's address; not available to a general
+#                replacement policy at decision time.
+BANNED_FEATURES = ["hit", "victim_addr"]
+
+# ── Dual-class gate threshold ─────────────────────────────────────────────
+# If EITHER per-class accuracy falls below this, final_fitness is forced to 0.
+# This prevents the LLM from gaming balanced-accuracy with all-one-class output.
+DUAL_CLASS_MIN = 0.05
 
 
 # ── AST helpers ────────────────────────────────────────────────────────────
@@ -51,6 +78,21 @@ def complexity_penalty(n_constants: int) -> float:
     return 1.0 / (1.0 + PENALTY_STEP * excess)
 
 
+# ── Banned-feature detection ───────────────────────────────────────────────
+
+def find_banned_features(code_str: str) -> list[str]:
+    """
+    Scan *code_str* for any access to a banned feature via row['name'] or
+    row["name"].  Returns the list of banned names actually found.
+    """
+    found = []
+    for feat in BANNED_FEATURES:
+        pattern = rf"row\s*\[\s*['\"]({re.escape(feat)})['\"]"
+        if re.search(pattern, code_str):
+            found.append(feat)
+    return found
+
+
 # ── Code normalisation ─────────────────────────────────────────────────────
 
 def _normalise_code(heuristic_code: str) -> str:
@@ -70,10 +112,16 @@ def _normalise_code(heuristic_code: str) -> str:
 
 # ── Main evaluation entry point ────────────────────────────────────────────
 
+# Stratified sample size for evaluation.  7 M-row traces take hours with
+# iterrows(); 50 k rows finishes in ~5 s and gives stable metric estimates.
+EVAL_SAMPLE_ROWS = 50_000
+
+
 def evaluate_heuristic(
     heuristic_code: str,
     csv_path: str = DEFAULT_CSV,
     target_col: str = TARGET_COL,
+    max_rows: int = EVAL_SAMPLE_ROWS,
 ) -> dict:
     """
     Evaluate a heuristic expressed as a Python string.
@@ -86,7 +134,9 @@ def evaluate_heuristic(
     Returns
     -------
     dict with keys:
-      accuracy, f1, n_constants, complexity_penalty, final_fitness,
+      balanced_accuracy, precision, recall, f1,
+      acc_class0, acc_class1,
+      n_constants, complexity_penalty, final_fitness,
       n_samples, errors        — on success
       error                    — on failure (other keys still present but 0)
     """
@@ -96,8 +146,12 @@ def evaluate_heuristic(
     n_consts   = count_numeric_constants(full_code)
 
     base_result = dict(
-        accuracy=0.0,
+        balanced_accuracy=0.0,
+        precision=0.0,
+        recall=0.0,
         f1=0.0,
+        acc_class0=0.0,
+        acc_class1=0.0,
         n_constants=n_consts,
         complexity_penalty=complexity_penalty(max(n_consts, 0)),
         final_fitness=0.0,
@@ -108,6 +162,17 @@ def evaluate_heuristic(
     if n_consts == -1:
         base_result["error"] = "SyntaxError: could not parse heuristic code"
         base_result["complexity_penalty"] = 1.0
+        return base_result
+
+    # ── 1b. Banned-feature check ──────────────────────────────────────────
+    banned_used = find_banned_features(full_code)
+    if banned_used:
+        base_result["error"] = (
+            f"BANNED FEATURES USED: {banned_used}. "
+            "These features are inadmissible — they leak information that a "
+            "real policy cannot access at decision time. "
+            "Remove all references to: " + ", ".join(f"row['{f}']" for f in banned_used)
+        )
         return base_result
 
     # ── 2. Compile & exec ─────────────────────────────────────────────────
@@ -135,7 +200,7 @@ def evaluate_heuristic(
             "Pull the real file with:\n"
             "    sudo apt-get install git-lfs\n"
             "    git lfs install\n"
-            "    git lfs pull --include='datasets/perlbench_train_70.csv'"
+            f"    git lfs pull --include='{csv_path}'"
         )
 
     # Auto-detect target column: try the requested name, then common aliases,
@@ -152,11 +217,34 @@ def evaluate_heuristic(
         )
         target_col = found
 
+    # ── 3b. Stratified sample (fast evaluation on large datasets) ────────────
+    n_original = len(df)
+    if max_rows and n_original > max_rows:
+        # Sample proportionally from each class so the class ratio is preserved.
+        # Done per-class manually to avoid FutureWarning from groupby.apply.
+        parts = []
+        for cls_val, grp in df.groupby(target_col):
+            n_sample = max(1, round(max_rows * len(grp) / n_original))
+            parts.append(grp.sample(n=n_sample, random_state=42))
+        df = pd.concat(parts).reset_index(drop=True)
+        print(
+            f"  [INFO] Stratified sample: {len(df):,} rows "
+            f"(from {n_original:,} total; class ratio preserved)"
+        )
+
     y_true  = df[target_col].values
-    scores  = np.empty(len(df), dtype=float)
+
+    # ── HARD DELETE CHEAT COLUMNS ─────────────────────────────────────────
+    # Strip the label and every inadmissible feature so the heuristic
+    # physically cannot access them, regardless of what the LLM wrote.
+    _COLS_TO_DROP = ["hit", "victim_addr", "decision", "label", "cached", "target"]
+    _existing_drop = [c for c in _COLS_TO_DROP if c in df.columns]
+    df_safe = df.drop(columns=_existing_drop)
+
+    scores  = np.empty(len(df_safe), dtype=float)
     errors  = 0
 
-    for idx, (_, row) in enumerate(df.iterrows()):
+    for idx, (_, row) in enumerate(df_safe.iterrows()):
         try:
             scores[idx] = float(heuristic_fn(row))
         except Exception:
@@ -166,17 +254,36 @@ def evaluate_heuristic(
     # ── 4. Threshold scores → binary predictions ──────────────────────────
     y_pred = (scores > 0).astype(int)
 
-    # ── 5. Performance metrics ────────────────────────────────────────────
-    acc = float(accuracy_score(y_true, y_pred))
-    f1  = float(f1_score(y_true, y_pred, zero_division=0))
+    # ── 5. Performance metrics (skew-robust) ─────────────────────────────
+    bal_acc   = float(balanced_accuracy_score(y_true, y_pred))
+    prec      = float(precision_score(y_true, y_pred, zero_division=0))
+    rec       = float(recall_score(y_true, y_pred, zero_division=0))
+    f1        = float(f1_score(y_true, y_pred, zero_division=0))
+
+    # Per-class accuracy (= per-class recall)
+    mask0 = y_true == 0
+    mask1 = y_true == 1
+    acc_class0 = float((y_pred[mask0] == 0).mean()) if mask0.any() else 0.0
+    acc_class1 = float((y_pred[mask1] == 1).mean()) if mask1.any() else 0.0
 
     # ── 6. Complexity penalty & Final Fitness ─────────────────────────────
-    pen           = complexity_penalty(n_consts)
-    final_fitness = f1 * pen          # penalise F1 if too many constants
+    pen = complexity_penalty(n_consts)
+
+    # Hard dual-class gate: a heuristic that predicts only one class is
+    # worthless regardless of balanced accuracy.  Force fitness to zero so
+    # the LLM receives an unambiguous signal to change strategy.
+    if acc_class0 < DUAL_CLASS_MIN or acc_class1 < DUAL_CLASS_MIN:
+        final_fitness = 0.0
+    else:
+        final_fitness = bal_acc * pen
 
     return dict(
-        accuracy          = round(acc,           4),
+        balanced_accuracy = round(bal_acc,       4),
+        precision         = round(prec,          4),
+        recall            = round(rec,           4),
         f1                = round(f1,            4),
+        acc_class0        = round(acc_class0,    4),
+        acc_class1        = round(acc_class1,    4),
         n_constants       = n_consts,
         complexity_penalty= round(pen,           4),
         final_fitness     = round(final_fitness, 4),
