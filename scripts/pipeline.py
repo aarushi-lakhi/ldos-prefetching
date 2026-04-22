@@ -1,15 +1,28 @@
 """
-pipeline.py  —  Level-1 Black-Box LLM Optimisation Pipeline
+pipeline.py  —  Level-2 Data Agent LLM Optimisation Pipeline
              for Cache Replacement Heuristics
 
-Runs an iterative loop where an LLM (via AWS Bedrock) proposes Python
-heuristic bodies, the evaluator scores them, and the score + complexity
-penalty are fed back as graded feedback for the next generation.
+Each iteration runs a four-step agentic loop:
 
-Diversity tracking prevents the loop from stagnating on minor numeric tweaks:
-if the last DIVERSITY_WINDOW heuristics are too similar (measured by
-code-fingerprint clustering), the LLM is explicitly asked to explore a
-fundamentally different strategy.
+  Step 1 — Exploration Prompt:
+    Ask the LLM to write a pandas analysis script that examines the training
+    CSV for correlations, distributions, and patterns relevant to prediction.
+    The LLM returns code inside <explore_data> XML tags.
+
+  Step 2 — Sandbox Execution:
+    Extract and run that script via subprocess (60 s timeout).
+    Capture stdout (insights) and stderr (errors) separately.
+
+  Step 3 — Generation Prompt:
+    Feed the captured stdout back to the LLM alongside feature docs and prior
+    feedback. The LLM returns its heuristic inside <heuristic> XML tags.
+
+  Step 4 — Evaluation:
+    Extract the heuristic, run it through evaluator.py, and log
+    Balanced Accuracy + Raw Accuracy (Glider metric) for every iteration.
+
+Diversity tracking prevents stagnation: if the last DIVERSITY_WINDOW
+heuristics reference the same features, the LLM is asked for a new strategy.
 
 Usage
 -----
@@ -26,10 +39,15 @@ import json
 import argparse
 import hashlib
 import textwrap
+import subprocess
+import tempfile
 from datetime import datetime
 
+import pandas as pd
+
 # ── Make sibling scripts importable when run from any directory ────────────
-_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+_SCRIPTS_DIR  = os.path.dirname(os.path.abspath(__file__))
+_PROJECT_ROOT = os.path.dirname(_SCRIPTS_DIR)
 if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 
@@ -131,6 +149,70 @@ def _fingerprint(code: str) -> str:
     return hashlib.md5(normalised.encode()).hexdigest()[:10]
 
 
+def _extract_tag(text: str, tag: str) -> str | None:
+    """Return the content between <tag>…</tag>, stripped, or None if absent."""
+    m = re.search(rf"<{re.escape(tag)}>(.*?)</{re.escape(tag)}>", text, re.DOTALL)
+    return m.group(1).strip() if m else None
+
+
+# ── Exploration prompt ─────────────────────────────────────────────────────
+
+EXPLORE_PROMPT_TEMPLATE = textwrap.dedent("""\
+    You are an AI architect. Before writing a cache replacement heuristic,
+    you must analyze the data.
+
+    The dataset is at '{csv_path}' and has these columns:
+      {headers_str}
+
+    The label is 'decision' (1 = cache-friendly / keep, ~97 % of rows;
+    0 = cache-averse / evict, ~3 % of rows).
+
+    Write a Python script using pandas to uncover patterns that predict 'decision'.
+    Suggested analyses:
+      • Value distributions of ip, full_addr, type, set, way per class (0 vs 1)
+      • Page-alignment match: (ip >> 12) == (full_addr >> 12) per class
+      • How access type (0=LOAD,1=RFO,2=PREFETCH,3=WRITE,4=TRANSLATION) correlates with eviction
+      • Bitwise low-order bits of ip and full_addr for each class
+
+    IMPORTANT: The CSV is ~500 MB. Always use nrows=50000 to stay fast.
+    Keep your script concise (under 40 lines) and print a clear summary.
+
+    Output your code EXACTLY inside <explore_data> XML tags. Do not write the heuristic yet.
+
+    <explore_data>
+    import pandas as pd
+    # your exploration code here
+    </explore_data>
+    """)
+
+
+def _build_explore_prompt(headers: list[str], csv_path: str) -> str:
+    return EXPLORE_PROMPT_TEMPLATE.format(
+        csv_path    = csv_path,
+        headers_str = ", ".join(headers),
+    )
+
+
+def _run_exploration(code: str, timeout: int = 60) -> tuple[str, str]:
+    """Write *code* to temp_explore.py, run it from project root, return (stdout, stderr)."""
+    explore_path = os.path.join(_SCRIPTS_DIR, "temp_explore.py")
+    with open(explore_path, "w") as fh:
+        fh.write(code)
+    try:
+        proc = subprocess.run(
+            [sys.executable, explore_path],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=_PROJECT_ROOT,
+        )
+        return proc.stdout, proc.stderr
+    except subprocess.TimeoutExpired:
+        return "", f"Exploration script timed out after {timeout}s — use nrows=50000 to limit data."
+    except Exception as exc:
+        return "", f"Failed to run exploration script: {exc}"
+
+
 def _is_low_diversity(history: list, window: int) -> bool:
     """
     True when every heuristic in the last `window` entries shares a common
@@ -180,25 +262,36 @@ def _build_prompt(
     prev_code: str | None,
     diversity_warning: bool,
     iteration: int,
+    exploration_stdout: str = "",
+    exploration_stderr: str = "",
 ) -> str:
     parts = [SYSTEM_PROMPT.format(feature_doc=FEATURE_DOC)]
 
-    if iteration == 1:
+    # ── Exploration insights (this iteration's data analysis) ──────────────
+    if exploration_stdout.strip():
+        trunc = exploration_stdout[:3000]
+        if len(exploration_stdout) > 3000:
+            trunc += "\n... [output truncated]"
         parts.append(
-            "\n--- SMART SEED HEURISTIC (Iteration 1) ---\n"
-            "Here is a carefully designed starting heuristic that already predicts "
-            "BOTH classes.  For your first iteration, keep this logic intact and ADD "
-            "exactly one new conditional branch that uses the `set` or `way` feature "
-            "to further distinguish cache-averse from cache-friendly accesses.  "
-            "Do NOT simplify or remove the existing logic.\n"
-            f"```python\n{SEED_HEURISTIC}```\n"
+            "\n--- DATA EXPLORATION INSIGHTS ---\n"
+            "Your exploration script produced the following statistical output.\n"
+            "Use these patterns to design your heuristic:\n\n"
+            f"{trunc}\n"
         )
-    elif feedback:
+    elif exploration_stderr.strip():
+        parts.append(
+            "\n--- DATA EXPLORATION NOTE ---\n"
+            "The exploration script encountered an error:\n"
+            f"{exploration_stderr[:500]}\n"
+            "Proceed using domain knowledge and the feature descriptions above.\n"
+        )
+
+    if feedback:
         parts.append(f"\n--- FEEDBACK FROM PREVIOUS ITERATION ---\n{feedback}\n")
 
-    if prev_code and iteration > 1:
+    if prev_code:
         parts.append(
-            f"\n--- PREVIOUS HEURISTIC (for reference only) ---\n"
+            "\n--- PREVIOUS HEURISTIC (for reference only) ---\n"
             f"```python\n{prev_code}\n```\n"
         )
 
@@ -215,8 +308,11 @@ def _build_prompt(
         )
 
     parts.append(
-        "\nWrite an IMPROVED heuristic body now.  "
-        "Return ONLY the function body (no `def` line, no markdown)."
+        "\nBased on the exploration insights above, write your improved heuristic "
+        "body inside <heuristic> XML tags (no `def` line, no markdown):\n"
+        "<heuristic>\n"
+        "# your function body here\n"
+        "</heuristic>"
     )
     return "\n".join(parts)
 
@@ -341,6 +437,13 @@ def run_pipeline(
 
     llm = get_wrapper(model_name)
 
+    # ── Read CSV headers once (fast: nrows=0) ─────────────────────────────
+    try:
+        csv_headers = list(pd.read_csv(csv_path, nrows=0).columns)
+    except Exception as exc:
+        print(f"  [WARN] Could not read CSV headers: {exc}")
+        csv_headers = ["triggering_cpu", "set", "way", "full_addr", "ip", "type", "timestamp", "decision"]
+
     history: list[dict] = []
     best    = {"final_fitness": -1.0, "code": None, "metrics": None, "iteration": -1}
     feedback    = ""
@@ -353,27 +456,53 @@ def run_pipeline(
         if low_div:
             print("  [diversity] Low-diversity signal — prompting for new strategy")
 
-        prompt = _build_prompt(
-            feedback         = feedback,
-            prev_code        = prev_code,
-            diversity_warning= low_div,
-            iteration        = i,
-        )
-
-        # ── LLM call ──────────────────────────────────────────────────────
+        # ── STEP 1: Exploration Prompt ────────────────────────────────────
+        print("  [Step 1/4] Requesting data exploration script…")
+        explore_prompt = _build_explore_prompt(csv_headers, csv_path)
         try:
-            raw   = llm.send_pdf(prompt, None)
-            code  = _strip_markdown(raw)
+            explore_raw = llm.send_pdf(explore_prompt, None)
         except Exception as exc:
-            print(f"  [ERROR] LLM call failed: {exc}")
+            print(f"  [ERROR] Exploration LLM call failed: {exc}")
+            explore_raw = ""
+
+        explore_code = _extract_tag(explore_raw, "explore_data")
+        if not explore_code:
+            print("  [WARN] No <explore_data> tag found — skipping sandbox")
+            explore_stdout, explore_stderr = "", "LLM did not produce an <explore_data> block."
+        else:
+            # ── STEP 2: Sandbox Execution ─────────────────────────────────
+            print("  [Step 2/4] Running exploration script in sandbox…")
+            explore_stdout, explore_stderr = _run_exploration(explore_code)
+            if explore_stderr:
+                print(f"  [explore stderr] {explore_stderr[:200]}")
+            preview = explore_stdout[:300].replace("\n", " ")
+            print(f"  [explore stdout] {preview}{'…' if len(explore_stdout) > 300 else ''}")
+
+        # ── STEP 3: Generation Prompt ─────────────────────────────────────
+        print("  [Step 3/4] Requesting heuristic from exploration insights…")
+        gen_prompt = _build_prompt(
+            feedback           = feedback,
+            prev_code          = prev_code,
+            diversity_warning  = low_div,
+            iteration          = i,
+            exploration_stdout = explore_stdout,
+            exploration_stderr = explore_stderr,
+        )
+        try:
+            gen_raw = llm.send_pdf(gen_prompt, None)
+            code    = _extract_tag(gen_raw, "heuristic") or _strip_markdown(gen_raw)
+        except Exception as exc:
+            print(f"  [ERROR] Generation LLM call failed: {exc}")
             feedback = f"Iteration {i}: LLM call failed ({exc}). Please try again."
-            history.append({"iteration": i, "code": "", "metrics": None, "hash": ""})
+            history.append({"iteration": i, "code": "", "metrics": None, "hash": "",
+                            "explore_stdout": explore_stdout[:500]})
             continue
 
         fp = _fingerprint(code)
         print(f"  Code fingerprint : {fp}")
 
-        # ── Evaluate ──────────────────────────────────────────────────────
+        # ── STEP 4: Evaluate ──────────────────────────────────────────────
+        print("  [Step 4/4] Evaluating heuristic…")
         metrics = evaluate_heuristic(code, csv_path=csv_path, target_col=target_col)
 
         if "error" in metrics:
@@ -417,10 +546,11 @@ def run_pipeline(
             prev_code = code
 
         history.append({
-            "iteration": i,
-            "code"     : code,
-            "metrics"  : metrics,
-            "hash"     : fp,
+            "iteration"      : i,
+            "code"           : code,
+            "metrics"        : metrics,
+            "hash"           : fp,
+            "explore_stdout" : explore_stdout[:500],
         })
 
     # ── Final report ──────────────────────────────────────────────────────
