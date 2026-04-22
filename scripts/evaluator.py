@@ -22,6 +22,7 @@ import textwrap
 import pandas as pd
 import numpy as np
 from sklearn.metrics import (
+    accuracy_score,
     balanced_accuracy_score,
     precision_score,
     recall_score,
@@ -31,6 +32,9 @@ from sklearn.metrics import (
 # ── Defaults (can be overridden at call time) ──────────────────────────────
 DEFAULT_CSV  = "datasets/perlbench_train_70.csv"
 TARGET_COL   = "decision"   # actual column written by analyze_data.py (0/1)
+
+# Glider (Shi et al. 2019) offline accuracy for the mcf trace — our comparison target.
+GLIDER_MCF_BASELINE = 0.8114
 
 # Heuristics with ≤ CONSTANT_THRESHOLD numeric literals get no penalty.
 # Each constant beyond that reduces the penalty factor by 0.10.
@@ -255,10 +259,18 @@ def evaluate_heuristic(
     y_pred = (scores > 0).astype(int)
 
     # ── 5. Performance metrics (skew-robust) ─────────────────────────────
+    raw_acc   = float(accuracy_score(y_true, y_pred))
     bal_acc   = float(balanced_accuracy_score(y_true, y_pred))
     prec      = float(precision_score(y_true, y_pred, zero_division=0))
     rec       = float(recall_score(y_true, y_pred, zero_division=0))
     f1        = float(f1_score(y_true, y_pred, zero_division=0))
+
+    print(f"  Raw Accuracy (Glider Metric): {raw_acc:.4f}")
+    _delta = (raw_acc - GLIDER_MCF_BASELINE) * 100
+    if _delta >= 0:
+        print(f"  [GLIDER COMPARISON] Beat Baseline by {_delta:.2f}%")
+    else:
+        print(f"  [GLIDER COMPARISON] Missed Baseline by {abs(_delta):.2f}%")
 
     # Per-class accuracy (= per-class recall)
     mask0 = y_true == 0
@@ -278,6 +290,7 @@ def evaluate_heuristic(
         final_fitness = bal_acc * pen
 
     return dict(
+        raw_accuracy      = round(raw_acc,       4),
         balanced_accuracy = round(bal_acc,       4),
         precision         = round(prec,          4),
         recall            = round(rec,           4),

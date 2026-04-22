@@ -1,26 +1,27 @@
 {
-  "timestamp": "2026-04-09T16:50:12.499748",
+  "timestamp": "2026-04-21T20:01:49.659208",
   "model": "claude-haiku4.5",
-  "iterations_run": 15,
+  "iterations_run": 50,
   "dataset": "datasets/mcf_train_70.csv",
   "target_col": "decision",
   "best": {
-    "final_fitness": 0.2245,
-    "code": "ip = row['ip']\nfull_addr = row['full_addr']\naccess_type = row['type']\n\n# Extract page indices (relational, no magic)\nip_page = ip >> 12\naddr_page = full_addr >> 12\nsame_page = ip_page == addr_page\n\n# Address delta for locality detection\naddr_delta = abs(full_addr - ip) if ip != 0 else full_addr\n\n# Bitwise similarity between ip and address\nip_addr_xor = ip ^ full_addr\nxor_popcount = bin(ip_addr_xor).count('1')\n\n# Access type flags\nis_prefetch = access_type == 2\nis_rfo = access_type == 1\nis_load = access_type == 0\nis_translation = access_type == 4\n\nscore = 0.0\n\n# Primary signal: same page = strong reuse indicator\nif same_page:\n    score += 2.0\nelse:\n    # Different page: penalize based on XOR popcount ratio\n    xor_ratio = xor_popcount / 64.0\n    score -= xor_ratio\n\n# Secondary: address delta (small = good locality)\nif addr_delta > 0:\n    delta_bits = len(bin(addr_delta)) - 2\n    # Normalize by typical cache line size and page size\n    if delta_bits < 10:\n        score += 1.5\n    elif delta_bits < 20:\n        score += 0.8\n    elif delta_bits < 32:\n        score += 0.2 - (delta_bits - 20) / 120.0\n    else:\n        score -= 0.5\n\n# Tertiary: bitwise overlap (low XOR = similar addresses)\nif xor_popcount < 10:\n    score += 1.0\nelif xor_popcount < 32:\n    score += 0.4 - (xor_popcount - 10) / 110.0\n\n# Access type patterns\nif is_load:\n    score += 0.3\nelif is_prefetch:\n    score -= 0.8\nelif is_rfo:\n    score -= 0.2\nelif is_translation:\n    score -= 0.4\n\n# Edge cases\nif ip == 0 or full_addr == 0:\n    score -= 0.5\n\nreturn score",
+    "final_fitness": 0.3778,
+    "code": "ip = row['ip']\nfull_addr = row['full_addr']\naccess_type = row['type']\nway = row['way']\n\n# Prefetches are speculative and often not reused\nif access_type == 2:\n    return -1\n\n# Translations have minimal reuse\nif access_type == 4:\n    return -0.5\n\n# Extract page numbers (12-bit shift for 4KB pages)\nip_page = ip >> 12\naddr_page = full_addr >> 12\n\n# Same page indicates strong spatial locality and reuse\nif ip_page == addr_page:\n    return 3\n\n# Address delta: measure distance between IP and address\naddr_delta = abs(full_addr - ip)\n\n# Very close addresses (within cache line size or nearby) suggest tight coupling\nif addr_delta < 256:\n    return 2\n\n# Bit-level XOR correlation: measure how aligned IP and address are\nxor_val = ip ^ full_addr\nhamming = bin(xor_val).count('1')\n\n# Strong bit alignment (very few differing bits)\nif hamming < 10:\n    return 1.5\n\n# Moderate alignment\nif hamming < 20:\n    return 0.8\n\n# Weak alignment: differentiate by access type\nif access_type == 1:\n    return 0.2\nelif access_type == 0:\n    return -0.2\n\n# Default: very weak alignment and poor reuse indicators\nreturn -0.8",
     "metrics": {
-      "balanced_accuracy": 0.8755,
-      "precision": 1.0,
-      "recall": 0.7509,
-      "f1": 0.8577,
-      "acc_class0": 1.0,
-      "acc_class1": 0.7509,
-      "n_constants": 34,
-      "complexity_penalty": 0.2564,
-      "final_fitness": 0.2245,
+      "raw_accuracy": 0.825,
+      "balanced_accuracy": 0.8689,
+      "precision": 0.9982,
+      "recall": 0.7405,
+      "f1": 0.8502,
+      "acc_class0": 0.9972,
+      "acc_class1": 0.7405,
+      "n_constants": 18,
+      "complexity_penalty": 0.4348,
+      "final_fitness": 0.3778,
       "n_samples": 50000,
       "errors": 0
     },
-    "iteration": 5
+    "iteration": 8
   },
   "history": [
     {
@@ -39,164 +40,462 @@
         "errors": 0,
         "error": "SyntaxError: could not parse heuristic code"
       },
-      "hash": "ffc88ed97f"
+      "hash": "ae9104d5cd"
     },
     {
       "iteration": 2,
       "metrics": {
-        "balanced_accuracy": 0.2565,
-        "precision": 0.3318,
-        "recall": 0.1569,
-        "f1": 0.213,
-        "acc_class0": 0.3561,
-        "acc_class1": 0.1569,
-        "n_constants": 34,
-        "complexity_penalty": 0.2564,
-        "final_fitness": 0.0658,
+        "raw_accuracy": 0.6708,
+        "balanced_accuracy": 0.5,
+        "precision": 0.6708,
+        "recall": 1.0,
+        "f1": 0.803,
+        "acc_class0": 0.0,
+        "acc_class1": 1.0,
+        "n_constants": 36,
+        "complexity_penalty": 0.2439,
+        "final_fitness": 0.0,
         "n_samples": 50000,
         "errors": 0
       },
-      "hash": "e4ec4b5bca"
+      "hash": "ac6ecd60fc"
     },
     {
       "iteration": 3,
       "metrics": {
-        "balanced_accuracy": 0.7936,
+        "raw_accuracy": 0.3296,
+        "balanced_accuracy": 0.5003,
         "precision": 1.0,
-        "recall": 0.5872,
-        "f1": 0.7399,
+        "recall": 0.0006,
+        "f1": 0.0013,
         "acc_class0": 1.0,
-        "acc_class1": 0.5872,
-        "n_constants": 32,
-        "complexity_penalty": 0.2703,
-        "final_fitness": 0.2145,
-        "n_samples": 50000,
-        "errors": 0
-      },
-      "hash": "5af0d85dc7"
-    },
-    {
-      "iteration": 4,
-      "metrics": {
-        "balanced_accuracy": 0.8156,
-        "precision": 0.9189,
-        "recall": 0.7695,
-        "f1": 0.8376,
-        "acc_class0": 0.8617,
-        "acc_class1": 0.7695,
-        "n_constants": 33,
-        "complexity_penalty": 0.2632,
-        "final_fitness": 0.2146,
-        "n_samples": 50000,
-        "errors": 0
-      },
-      "hash": "28a40e1714"
-    },
-    {
-      "iteration": 5,
-      "metrics": {
-        "balanced_accuracy": 0.8755,
-        "precision": 1.0,
-        "recall": 0.7509,
-        "f1": 0.8577,
-        "acc_class0": 1.0,
-        "acc_class1": 0.7509,
-        "n_constants": 34,
-        "complexity_penalty": 0.2564,
-        "final_fitness": 0.2245,
-        "n_samples": 50000,
-        "errors": 0
-      },
-      "hash": "c039c6ecee"
-    },
-    {
-      "iteration": 6,
-      "metrics": {
-        "balanced_accuracy": 0.4856,
-        "precision": 0.6642,
-        "recall": 0.9516,
-        "f1": 0.7823,
-        "acc_class0": 0.0197,
-        "acc_class1": 0.9516,
-        "n_constants": 33,
-        "complexity_penalty": 0.2632,
-        "final_fitness": 0.0,
-        "n_samples": 50000,
-        "errors": 0
-      },
-      "hash": "5c5391cc33"
-    },
-    {
-      "iteration": 7,
-      "metrics": {
-        "balanced_accuracy": 0.5,
-        "precision": 0.0,
-        "recall": 0.0,
-        "f1": 0.0,
-        "acc_class0": 1.0,
-        "acc_class1": 0.0,
-        "n_constants": 33,
-        "complexity_penalty": 0.2632,
-        "final_fitness": 0.0,
-        "n_samples": 50000,
-        "errors": 0
-      },
-      "hash": "b4c7485a96"
-    },
-    {
-      "iteration": 8,
-      "metrics": {
-        "balanced_accuracy": 0.5,
-        "precision": 0.0,
-        "recall": 0.0,
-        "f1": 0.0,
-        "acc_class0": 1.0,
-        "acc_class1": 0.0,
+        "acc_class1": 0.0006,
         "n_constants": 26,
         "complexity_penalty": 0.3226,
         "final_fitness": 0.0,
         "n_samples": 50000,
         "errors": 0
       },
-      "hash": "e283266ce3"
+      "hash": "efdebad045"
+    },
+    {
+      "iteration": 4,
+      "metrics": {
+        "raw_accuracy": 0.6384,
+        "balanced_accuracy": 0.4759,
+        "precision": 0.6598,
+        "recall": 0.9518,
+        "f1": 0.7793,
+        "acc_class0": 0.0,
+        "acc_class1": 0.9518,
+        "n_constants": 24,
+        "complexity_penalty": 0.3448,
+        "final_fitness": 0.0,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "c72ea304c6"
+    },
+    {
+      "iteration": 5,
+      "metrics": {
+        "raw_accuracy": 0.6384,
+        "balanced_accuracy": 0.4759,
+        "precision": 0.6598,
+        "recall": 0.9518,
+        "f1": 0.7793,
+        "acc_class0": 0.0,
+        "acc_class1": 0.9518,
+        "n_constants": 15,
+        "complexity_penalty": 0.5,
+        "final_fitness": 0.0,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "143263d64f"
+    },
+    {
+      "iteration": 6,
+      "metrics": {
+        "raw_accuracy": 0.6384,
+        "balanced_accuracy": 0.4759,
+        "precision": 0.6598,
+        "recall": 0.9518,
+        "f1": 0.7793,
+        "acc_class0": 0.0,
+        "acc_class1": 0.9518,
+        "n_constants": 17,
+        "complexity_penalty": 0.4545,
+        "final_fitness": 0.0,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "9ce3fec2a8"
+    },
+    {
+      "iteration": 7,
+      "metrics": {
+        "raw_accuracy": 0.3292,
+        "balanced_accuracy": 0.5,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "acc_class0": 1.0,
+        "acc_class1": 0.0,
+        "n_constants": 20,
+        "complexity_penalty": 0.4,
+        "final_fitness": 0.0,
+        "n_samples": 50000,
+        "errors": 48382
+      },
+      "hash": "a832a36305"
+    },
+    {
+      "iteration": 8,
+      "metrics": {
+        "raw_accuracy": 0.825,
+        "balanced_accuracy": 0.8689,
+        "precision": 0.9982,
+        "recall": 0.7405,
+        "f1": 0.8502,
+        "acc_class0": 0.9972,
+        "acc_class1": 0.7405,
+        "n_constants": 18,
+        "complexity_penalty": 0.4348,
+        "final_fitness": 0.3778,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "5aa777292b"
     },
     {
       "iteration": 9,
       "metrics": {
-        "balanced_accuracy": 0.5,
-        "precision": 0.0,
-        "recall": 0.0,
-        "f1": 0.0,
-        "acc_class0": 1.0,
-        "acc_class1": 0.0,
-        "n_constants": 27,
-        "complexity_penalty": 0.3125,
+        "raw_accuracy": 0.641,
+        "balanced_accuracy": 0.4828,
+        "precision": 0.6629,
+        "recall": 0.9459,
+        "f1": 0.7795,
+        "acc_class0": 0.0197,
+        "acc_class1": 0.9459,
+        "n_constants": 24,
+        "complexity_penalty": 0.3448,
         "final_fitness": 0.0,
         "n_samples": 50000,
         "errors": 0
       },
-      "hash": "eeda88739c"
+      "hash": "2b32c86d7e"
     },
     {
       "iteration": 10,
       "metrics": {
-        "balanced_accuracy": 0.5,
-        "precision": 0.0,
-        "recall": 0.0,
-        "f1": 0.0,
-        "acc_class0": 1.0,
-        "acc_class1": 0.0,
-        "n_constants": 23,
-        "complexity_penalty": 0.3571,
+        "raw_accuracy": 0.641,
+        "balanced_accuracy": 0.4828,
+        "precision": 0.6629,
+        "recall": 0.9459,
+        "f1": 0.7795,
+        "acc_class0": 0.0197,
+        "acc_class1": 0.9459,
+        "n_constants": 29,
+        "complexity_penalty": 0.2941,
         "final_fitness": 0.0,
         "n_samples": 50000,
         "errors": 0
       },
-      "hash": "6a69100987"
+      "hash": "13d9e508e4"
     },
     {
       "iteration": 11,
       "metrics": {
+        "raw_accuracy": 0.825,
+        "balanced_accuracy": 0.8689,
+        "precision": 0.9982,
+        "recall": 0.7405,
+        "f1": 0.8502,
+        "acc_class0": 0.9972,
+        "acc_class1": 0.7405,
+        "n_constants": 31,
+        "complexity_penalty": 0.2778,
+        "final_fitness": 0.2414,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "59577fc703"
+    },
+    {
+      "iteration": 12,
+      "metrics": {
+        "raw_accuracy": 0.8143,
+        "balanced_accuracy": 0.8446,
+        "precision": 0.9585,
+        "recall": 0.7558,
+        "f1": 0.8452,
+        "acc_class0": 0.9334,
+        "acc_class1": 0.7558,
+        "n_constants": 27,
+        "complexity_penalty": 0.3125,
+        "final_fitness": 0.2639,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "4dc98dbb57"
+    },
+    {
+      "iteration": 13,
+      "metrics": {
+        "raw_accuracy": 0.5116,
+        "balanced_accuracy": 0.479,
+        "precision": 0.6551,
+        "recall": 0.5745,
+        "f1": 0.6121,
+        "acc_class0": 0.3836,
+        "acc_class1": 0.5745,
+        "n_constants": 42,
+        "complexity_penalty": 0.2128,
+        "final_fitness": 0.1019,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "0dba097b3d"
+    },
+    {
+      "iteration": 14,
+      "metrics": {
+        "raw_accuracy": 0.5602,
+        "balanced_accuracy": 0.4476,
+        "precision": 0.6423,
+        "recall": 0.7773,
+        "f1": 0.7034,
+        "acc_class0": 0.1178,
+        "acc_class1": 0.7773,
+        "n_constants": 31,
+        "complexity_penalty": 0.2778,
+        "final_fitness": 0.1243,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "703cb799fd"
+    },
+    {
+      "iteration": 15,
+      "metrics": {
+        "raw_accuracy": 0.5654,
+        "balanced_accuracy": 0.4964,
+        "precision": 0.6685,
+        "recall": 0.6984,
+        "f1": 0.6832,
+        "acc_class0": 0.2943,
+        "acc_class1": 0.6984,
+        "n_constants": 46,
+        "complexity_penalty": 0.1961,
+        "final_fitness": 0.0973,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "fd112d61c3"
+    },
+    {
+      "iteration": 16,
+      "metrics": {
+        "raw_accuracy": 0.5654,
+        "balanced_accuracy": 0.4964,
+        "precision": 0.6685,
+        "recall": 0.6984,
+        "f1": 0.6831,
+        "acc_class0": 0.2943,
+        "acc_class1": 0.6984,
+        "n_constants": 43,
+        "complexity_penalty": 0.2083,
+        "final_fitness": 0.1034,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "312e5f9aec"
+    },
+    {
+      "iteration": 17,
+      "metrics": {
+        "raw_accuracy": 0.4077,
+        "balanced_accuracy": 0.4951,
+        "precision": 0.6618,
+        "recall": 0.2392,
+        "f1": 0.3514,
+        "acc_class0": 0.751,
+        "acc_class1": 0.2392,
+        "n_constants": 37,
+        "complexity_penalty": 0.2381,
+        "final_fitness": 0.1179,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "1bccd94fcd"
+    },
+    {
+      "iteration": 18,
+      "metrics": {
+        "raw_accuracy": 0.3688,
+        "balanced_accuracy": 0.4979,
+        "precision": 0.6632,
+        "recall": 0.1198,
+        "f1": 0.203,
+        "acc_class0": 0.876,
+        "acc_class1": 0.1198,
+        "n_constants": 42,
+        "complexity_penalty": 0.2128,
+        "final_fitness": 0.1059,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "4b32630354"
+    },
+    {
+      "iteration": 19,
+      "metrics": {
+        "raw_accuracy": 0.3688,
+        "balanced_accuracy": 0.4979,
+        "precision": 0.6632,
+        "recall": 0.1198,
+        "f1": 0.203,
+        "acc_class0": 0.876,
+        "acc_class1": 0.1198,
+        "n_constants": 38,
+        "complexity_penalty": 0.2326,
+        "final_fitness": 0.1158,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "ad4ac36d64"
+    },
+    {
+      "iteration": 20,
+      "metrics": {
+        "raw_accuracy": 0.3298,
+        "balanced_accuracy": 0.5004,
+        "precision": 1.0,
+        "recall": 0.0008,
+        "f1": 0.0017,
+        "acc_class0": 1.0,
+        "acc_class1": 0.0008,
+        "n_constants": 43,
+        "complexity_penalty": 0.2083,
+        "final_fitness": 0.0,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "f939192398"
+    },
+    {
+      "iteration": 21,
+      "metrics": {
+        "raw_accuracy": 0.3265,
+        "balanced_accuracy": 0.4898,
+        "precision": 0.4253,
+        "recall": 0.0116,
+        "f1": 0.0226,
+        "acc_class0": 0.968,
+        "acc_class1": 0.0116,
+        "n_constants": 38,
+        "complexity_penalty": 0.2326,
+        "final_fitness": 0.0,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "d139c0a170"
+    },
+    {
+      "iteration": 22,
+      "metrics": {
+        "raw_accuracy": 0.331,
+        "balanced_accuracy": 0.4698,
+        "precision": 0.5107,
+        "recall": 0.0635,
+        "f1": 0.113,
+        "acc_class0": 0.876,
+        "acc_class1": 0.0635,
+        "n_constants": 28,
+        "complexity_penalty": 0.303,
+        "final_fitness": 0.1423,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "3bbc7a45d4"
+    },
+    {
+      "iteration": 23,
+      "metrics": {
+        "raw_accuracy": 0.3333,
+        "balanced_accuracy": 0.4409,
+        "precision": 0.5125,
+        "recall": 0.1261,
+        "f1": 0.2023,
+        "acc_class0": 0.7557,
+        "acc_class1": 0.1261,
+        "n_constants": 31,
+        "complexity_penalty": 0.2778,
+        "final_fitness": 0.1225,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "2bf8ea14f8"
+    },
+    {
+      "iteration": 24,
+      "metrics": {
+        "raw_accuracy": 0.4581,
+        "balanced_accuracy": 0.4171,
+        "precision": 0.6089,
+        "recall": 0.5371,
+        "f1": 0.5707,
+        "acc_class0": 0.2971,
+        "acc_class1": 0.5371,
+        "n_constants": 32,
+        "complexity_penalty": 0.2703,
+        "final_fitness": 0.1127,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "eb7f4bd939"
+    },
+    {
+      "iteration": 25,
+      "metrics": {
+        "raw_accuracy": 0.5598,
+        "balanced_accuracy": 0.4738,
+        "precision": 0.6552,
+        "recall": 0.7256,
+        "f1": 0.6886,
+        "acc_class0": 0.2219,
+        "acc_class1": 0.7256,
+        "n_constants": 39,
+        "complexity_penalty": 0.2273,
+        "final_fitness": 0.1077,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "f6e294e48c"
+    },
+    {
+      "iteration": 26,
+      "metrics": {
+        "raw_accuracy": 0.4785,
+        "balanced_accuracy": 0.4979,
+        "precision": 0.6687,
+        "recall": 0.4411,
+        "f1": 0.5316,
+        "acc_class0": 0.5547,
+        "acc_class1": 0.4411,
+        "n_constants": 33,
+        "complexity_penalty": 0.2632,
+        "final_fitness": 0.131,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "913dca3f56"
+    },
+    {
+      "iteration": 27,
+      "metrics": {
+        "raw_accuracy": 0.3292,
         "balanced_accuracy": 0.5,
         "precision": 0.0,
         "recall": 0.0,
@@ -209,75 +508,421 @@
         "n_samples": 50000,
         "errors": 0
       },
-      "hash": "c0b3df27fc"
+      "hash": "af7fd83f12"
     },
     {
-      "iteration": 12,
+      "iteration": 28,
       "metrics": {
-        "balanced_accuracy": 0.5121,
-        "precision": 1.0,
-        "recall": 0.0242,
-        "f1": 0.0472,
-        "acc_class0": 1.0,
-        "acc_class1": 0.0242,
-        "n_constants": 35,
-        "complexity_penalty": 0.25,
+        "raw_accuracy": 0.6384,
+        "balanced_accuracy": 0.4759,
+        "precision": 0.6598,
+        "recall": 0.9518,
+        "f1": 0.7793,
+        "acc_class0": 0.0,
+        "acc_class1": 0.9518,
+        "n_constants": 24,
+        "complexity_penalty": 0.3448,
         "final_fitness": 0.0,
         "n_samples": 50000,
         "errors": 0
       },
-      "hash": "c7891eb47d"
+      "hash": "feeea256f8"
     },
     {
-      "iteration": 13,
+      "iteration": 29,
       "metrics": {
-        "balanced_accuracy": 0.5019,
-        "precision": 1.0,
-        "recall": 0.0038,
-        "f1": 0.0075,
-        "acc_class0": 1.0,
-        "acc_class1": 0.0038,
-        "n_constants": 35,
-        "complexity_penalty": 0.25,
-        "final_fitness": 0.0,
-        "n_samples": 50000,
-        "errors": 0
-      },
-      "hash": "ec143fff88"
-    },
-    {
-      "iteration": 14,
-      "metrics": {
-        "balanced_accuracy": 0.5007,
-        "precision": 1.0,
-        "recall": 0.0015,
-        "f1": 0.0029,
-        "acc_class0": 1.0,
-        "acc_class1": 0.0015,
-        "n_constants": 29,
-        "complexity_penalty": 0.2941,
-        "final_fitness": 0.0,
-        "n_samples": 50000,
-        "errors": 0
-      },
-      "hash": "62d2463ab9"
-    },
-    {
-      "iteration": 15,
-      "metrics": {
-        "balanced_accuracy": 0.5132,
-        "precision": 1.0,
-        "recall": 0.0264,
-        "f1": 0.0515,
-        "acc_class0": 1.0,
-        "acc_class1": 0.0264,
+        "raw_accuracy": 0.2432,
+        "balanced_accuracy": 0.1818,
+        "precision": 0.4247,
+        "recall": 0.3616,
+        "f1": 0.3906,
+        "acc_class0": 0.0019,
+        "acc_class1": 0.3616,
         "n_constants": 32,
         "complexity_penalty": 0.2703,
         "final_fitness": 0.0,
         "n_samples": 50000,
         "errors": 0
       },
-      "hash": "1dfa2b6ff9"
+      "hash": "9c140a26b7"
+    },
+    {
+      "iteration": 30,
+      "metrics": {
+        "raw_accuracy": 0.2432,
+        "balanced_accuracy": 0.1818,
+        "precision": 0.4247,
+        "recall": 0.3616,
+        "f1": 0.3906,
+        "acc_class0": 0.0019,
+        "acc_class1": 0.3616,
+        "n_constants": 30,
+        "complexity_penalty": 0.2857,
+        "final_fitness": 0.0,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "2789217502"
+    },
+    {
+      "iteration": 31,
+      "metrics": {
+        "raw_accuracy": 0.6219,
+        "balanced_accuracy": 0.7157,
+        "precision": 0.9892,
+        "recall": 0.4412,
+        "f1": 0.6102,
+        "acc_class0": 0.9902,
+        "acc_class1": 0.4412,
+        "n_constants": 41,
+        "complexity_penalty": 0.2174,
+        "final_fitness": 0.1556,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "1d31f22028"
+    },
+    {
+      "iteration": 32,
+      "metrics": {
+        "raw_accuracy": 0.7362,
+        "balanced_accuracy": 0.7409,
+        "precision": 0.8579,
+        "recall": 0.7272,
+        "f1": 0.7871,
+        "acc_class0": 0.7546,
+        "acc_class1": 0.7272,
+        "n_constants": 33,
+        "complexity_penalty": 0.2632,
+        "final_fitness": 0.195,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "6c8d594ba2"
+    },
+    {
+      "iteration": 33,
+      "metrics": {
+        "raw_accuracy": 0.8251,
+        "balanced_accuracy": 0.8671,
+        "precision": 0.9936,
+        "recall": 0.744,
+        "f1": 0.8509,
+        "acc_class0": 0.9902,
+        "acc_class1": 0.744,
+        "n_constants": 29,
+        "complexity_penalty": 0.2941,
+        "final_fitness": 0.255,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "87743faf44"
+    },
+    {
+      "iteration": 34,
+      "metrics": {
+        "raw_accuracy": 0.8256,
+        "balanced_accuracy": 0.8675,
+        "precision": 0.9936,
+        "recall": 0.7448,
+        "f1": 0.8514,
+        "acc_class0": 0.9902,
+        "acc_class1": 0.7448,
+        "n_constants": 29,
+        "complexity_penalty": 0.2941,
+        "final_fitness": 0.2551,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "5cc6ac8737"
+    },
+    {
+      "iteration": 35,
+      "metrics": {
+        "raw_accuracy": 0.8256,
+        "balanced_accuracy": 0.8675,
+        "precision": 0.9936,
+        "recall": 0.7448,
+        "f1": 0.8514,
+        "acc_class0": 0.9902,
+        "acc_class1": 0.7448,
+        "n_constants": 35,
+        "complexity_penalty": 0.25,
+        "final_fitness": 0.2169,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "4d65a67349"
+    },
+    {
+      "iteration": 36,
+      "metrics": {
+        "raw_accuracy": 0.8256,
+        "balanced_accuracy": 0.8675,
+        "precision": 0.9936,
+        "recall": 0.7448,
+        "f1": 0.8514,
+        "acc_class0": 0.9902,
+        "acc_class1": 0.7448,
+        "n_constants": 29,
+        "complexity_penalty": 0.2941,
+        "final_fitness": 0.2551,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "6a5695c447"
+    },
+    {
+      "iteration": 37,
+      "metrics": {
+        "raw_accuracy": 0.8256,
+        "balanced_accuracy": 0.8675,
+        "precision": 0.9936,
+        "recall": 0.7448,
+        "f1": 0.8514,
+        "acc_class0": 0.9902,
+        "acc_class1": 0.7448,
+        "n_constants": 40,
+        "complexity_penalty": 0.2222,
+        "final_fitness": 0.1928,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "5863ab13f1"
+    },
+    {
+      "iteration": 38,
+      "metrics": {
+        "raw_accuracy": 0.8256,
+        "balanced_accuracy": 0.8675,
+        "precision": 0.9936,
+        "recall": 0.7448,
+        "f1": 0.8514,
+        "acc_class0": 0.9902,
+        "acc_class1": 0.7448,
+        "n_constants": 32,
+        "complexity_penalty": 0.2703,
+        "final_fitness": 0.2345,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "47a24876f6"
+    },
+    {
+      "iteration": 39,
+      "metrics": {
+        "raw_accuracy": 0.8256,
+        "balanced_accuracy": 0.8675,
+        "precision": 0.9936,
+        "recall": 0.7448,
+        "f1": 0.8514,
+        "acc_class0": 0.9902,
+        "acc_class1": 0.7448,
+        "n_constants": 39,
+        "complexity_penalty": 0.2273,
+        "final_fitness": 0.1972,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "0b704a6993"
+    },
+    {
+      "iteration": 40,
+      "metrics": {
+        "raw_accuracy": 0.8256,
+        "balanced_accuracy": 0.8675,
+        "precision": 0.9936,
+        "recall": 0.7448,
+        "f1": 0.8514,
+        "acc_class0": 0.9902,
+        "acc_class1": 0.7448,
+        "n_constants": 33,
+        "complexity_penalty": 0.2632,
+        "final_fitness": 0.2283,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "32781fd3d2"
+    },
+    {
+      "iteration": 41,
+      "metrics": {
+        "raw_accuracy": 0.7723,
+        "balanced_accuracy": 0.8303,
+        "precision": 1.0,
+        "recall": 0.6606,
+        "f1": 0.7956,
+        "acc_class0": 1.0,
+        "acc_class1": 0.6606,
+        "n_constants": 38,
+        "complexity_penalty": 0.2326,
+        "final_fitness": 0.1931,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "6ccd170baa"
+    },
+    {
+      "iteration": 42,
+      "metrics": {
+        "raw_accuracy": 0.7705,
+        "balanced_accuracy": 0.829,
+        "precision": 1.0,
+        "recall": 0.6579,
+        "f1": 0.7937,
+        "acc_class0": 1.0,
+        "acc_class1": 0.6579,
+        "n_constants": 26,
+        "complexity_penalty": 0.3226,
+        "final_fitness": 0.2674,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "c7f893b8bd"
+    },
+    {
+      "iteration": 43,
+      "metrics": {
+        "raw_accuracy": 0.7723,
+        "balanced_accuracy": 0.8303,
+        "precision": 1.0,
+        "recall": 0.6606,
+        "f1": 0.7956,
+        "acc_class0": 1.0,
+        "acc_class1": 0.6606,
+        "n_constants": 26,
+        "complexity_penalty": 0.3226,
+        "final_fitness": 0.2678,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "1008f7ff49"
+    },
+    {
+      "iteration": 44,
+      "metrics": {
+        "raw_accuracy": 0.7723,
+        "balanced_accuracy": 0.8303,
+        "precision": 1.0,
+        "recall": 0.6606,
+        "f1": 0.7956,
+        "acc_class0": 1.0,
+        "acc_class1": 0.6606,
+        "n_constants": 26,
+        "complexity_penalty": 0.3226,
+        "final_fitness": 0.2678,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "1d5628ed8a"
+    },
+    {
+      "iteration": 45,
+      "metrics": {
+        "raw_accuracy": 0.7723,
+        "balanced_accuracy": 0.8303,
+        "precision": 1.0,
+        "recall": 0.6606,
+        "f1": 0.7956,
+        "acc_class0": 1.0,
+        "acc_class1": 0.6606,
+        "n_constants": 26,
+        "complexity_penalty": 0.3226,
+        "final_fitness": 0.2678,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "1d5628ed8a"
+    },
+    {
+      "iteration": 46,
+      "metrics": {
+        "raw_accuracy": 0.5701,
+        "balanced_accuracy": 0.4321,
+        "precision": 0.6368,
+        "recall": 0.836,
+        "f1": 0.7229,
+        "acc_class0": 0.0283,
+        "acc_class1": 0.836,
+        "n_constants": 34,
+        "complexity_penalty": 0.2564,
+        "final_fitness": 0.0,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "37f40d9dcc"
+    },
+    {
+      "iteration": 47,
+      "metrics": {
+        "raw_accuracy": 0.3784,
+        "balanced_accuracy": 0.2823,
+        "precision": 0.5348,
+        "recall": 0.5638,
+        "f1": 0.5489,
+        "acc_class0": 0.0007,
+        "acc_class1": 0.5638,
+        "n_constants": 21,
+        "complexity_penalty": 0.3846,
+        "final_fitness": 0.0,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "ebab39673f"
+    },
+    {
+      "iteration": 48,
+      "metrics": {
+        "raw_accuracy": 0.3113,
+        "balanced_accuracy": 0.2324,
+        "precision": 0.486,
+        "recall": 0.4633,
+        "f1": 0.4744,
+        "acc_class0": 0.0015,
+        "acc_class1": 0.4633,
+        "n_constants": 26,
+        "complexity_penalty": 0.3226,
+        "final_fitness": 0.0,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "50c0f824fa"
+    },
+    {
+      "iteration": 49,
+      "metrics": {
+        "raw_accuracy": 0.3317,
+        "balanced_accuracy": 0.5018,
+        "precision": 1.0,
+        "recall": 0.0037,
+        "f1": 0.0074,
+        "acc_class0": 1.0,
+        "acc_class1": 0.0037,
+        "n_constants": 34,
+        "complexity_penalty": 0.2564,
+        "final_fitness": 0.0,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "2c7c6c20dd"
+    },
+    {
+      "iteration": 50,
+      "metrics": {
+        "raw_accuracy": 0.3306,
+        "balanced_accuracy": 0.501,
+        "precision": 1.0,
+        "recall": 0.0021,
+        "f1": 0.0042,
+        "acc_class0": 1.0,
+        "acc_class1": 0.0021,
+        "n_constants": 32,
+        "complexity_penalty": 0.2703,
+        "final_fitness": 0.0,
+        "n_samples": 50000,
+        "errors": 0
+      },
+      "hash": "df3ddd5809"
     }
   ]
 }
