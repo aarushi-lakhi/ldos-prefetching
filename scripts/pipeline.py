@@ -2,22 +2,38 @@
 pipeline.py  —  Level-2 Data Agent LLM Optimisation Pipeline
              for Cache Replacement Heuristics
 
-Each iteration runs a four-step agentic loop:
+Background & Baselines
+-----------------------
+Glider (Shi et al. 2019) achieves 81.14 % raw offline accuracy on the mcf
+trace — this is the comparison target throughout.
 
-  Step 1 — Exploration Prompt:
-    Ask the LLM to write a pandas analysis script that examines the training
-    CSV for correlations, distributions, and patterns relevant to prediction.
-    The LLM returns code inside <explore_data> XML tags.
+Level 1 (S-Search / Stochastic Search):
+  Repeatedly ask the LLM to generate heuristics, evaluate each one, and feed
+  results back as feedback, iterating until a good heuristic is found.
+  Best observed single-run result (iteration 8 of 50, claude-haiku-4.5):
+    Raw Accuracy  : 82.50 %  (+1.36 % over Glider)
+    Balanced Acc  : 86.89 %
+  Important: because the pipeline is a stochastic search — the LLM samples
+  different heuristics on every call — results vary across runs.  The figure
+  above comes from one successful run and is an approximate upper bound; more
+  trials are needed to establish a reliable mean.
 
-  Step 2 — Sandbox Execution:
-    Extract and run that script via subprocess (60 s timeout).
-    Capture stdout (insights) and stderr (errors) separately.
+Level 2 (Data Agent — this file):
+  Before each heuristic is generated, a fixed deterministic exploration script
+  computes real statistical patterns from the training CSV (class distributions,
+  per-type eviction rates, page-alignment rates, address deltas, Hamming
+  weights) and injects them as grounded context into the LLM prompt.
+  This replaces the earlier approach of asking the LLM to write its own
+  pandas exploration code, which failed every iteration due to dtype issues.
 
-  Step 3 — Generation Prompt:
-    Feed the captured stdout back to the LLM alongside feature docs and prior
-    feedback. The LLM returns its heuristic inside <heuristic> XML tags.
+Each iteration now runs a two-step loop:
 
-  Step 4 — Evaluation:
+  Step 1 — Generation Prompt:
+    Feed the pre-computed exploration insights, feature docs, and prior
+    feedback to the LLM.  The LLM returns its heuristic inside <heuristic>
+    XML tags.
+
+  Step 2 — Evaluation:
     Extract the heuristic, run it through evaluator.py, and log
     Balanced Accuracy + Raw Accuracy (Glider metric) for every iteration.
 
@@ -39,8 +55,6 @@ import json
 import argparse
 import hashlib
 import textwrap
-import subprocess
-import tempfile
 from datetime import datetime
 
 import pandas as pd
@@ -73,14 +87,14 @@ BANNED FEATURES — accessing these causes IMMEDIATE DISQUALIFICATION (fitness =
   row['victim_addr']     — BANNED: not available to a real replacement policy
 
 Label semantics (do NOT use in the heuristic):
-  decision = 1  → Belady OPT says KEEP this line (cache-friendly)  [~97 % of rows]
-  decision = 0  → Belady OPT says EVICT this line (cache-averse)   [~3 % of rows]
+  decision = 1  → Belady OPT says KEEP this line (cache-friendly)  [~80 % of rows]
+  decision = 0  → Belady OPT says EVICT this line (cache-averse)   [~20 % of rows]
 
-IMPORTANT — class imbalance: ~97 % of rows are label 1.
-Simply returning a positive constant scores F1 ≈ 0.98 but is USELESS in practice
-because it never predicts evictions.  A heuristic that correctly identifies even
-some of the ~3 % eviction cases while keeping most cache-friendly hits will
-produce a more ROBUST and GENERALIZABLE policy.  Aim to predict BOTH classes.
+IMPORTANT — class imbalance: ~80 % of rows are label 1, ~20 % are label 0.
+Simply returning a positive constant scores ~80 % raw accuracy but is USELESS
+in practice because it never predicts evictions.  A heuristic that correctly
+identifies eviction cases while keeping most cache-friendly hits will produce
+a more ROBUST and GENERALIZABLE policy.  Aim to predict BOTH classes.
 """
 
 SYSTEM_PROMPT = textwrap.dedent("""\
@@ -155,62 +169,82 @@ def _extract_tag(text: str, tag: str) -> str | None:
     return m.group(1).strip() if m else None
 
 
-# ── Exploration prompt ─────────────────────────────────────────────────────
+# ── Fixed deterministic exploration ────────────────────────────────────────
 
-EXPLORE_PROMPT_TEMPLATE = textwrap.dedent("""\
-    You are an AI architect. Before writing a cache replacement heuristic,
-    you must analyze the data.
+def _run_fixed_exploration(csv_path: str, nrows: int = 50_000) -> str:
+    """
+    Run a pre-written statistical analysis of the training CSV and return a
+    formatted insight string to inject into every generation prompt.
 
-    The dataset is at '{csv_path}' and has these columns:
-      {headers_str}
-
-    The label is 'decision' (1 = cache-friendly / keep, ~97 % of rows;
-    0 = cache-averse / evict, ~3 % of rows).
-
-    Write a Python script using pandas to uncover patterns that predict 'decision'.
-    Suggested analyses:
-      • Value distributions of ip, full_addr, type, set, way per class (0 vs 1)
-      • Page-alignment match: (ip >> 12) == (full_addr >> 12) per class
-      • How access type (0=LOAD,1=RFO,2=PREFETCH,3=WRITE,4=TRANSLATION) correlates with eviction
-      • Bitwise low-order bits of ip and full_addr for each class
-
-    IMPORTANT: The CSV is ~500 MB. Always use nrows=50000 to stay fast.
-    Keep your script concise (under 40 lines) and print a clear summary.
-
-    Output your code EXACTLY inside <explore_data> XML tags. Do not write the heuristic yet.
-
-    <explore_data>
-    import pandas as pd
-    # your exploration code here
-    </explore_data>
-    """)
-
-
-def _build_explore_prompt(headers: list[str], csv_path: str) -> str:
-    return EXPLORE_PROMPT_TEMPLATE.format(
-        csv_path    = csv_path,
-        headers_str = ", ".join(headers),
-    )
-
-
-def _run_exploration(code: str, timeout: int = 60) -> tuple[str, str]:
-    """Write *code* to temp_explore.py, run it from project root, return (stdout, stderr)."""
-    explore_path = os.path.join(_SCRIPTS_DIR, "temp_explore.py")
-    with open(explore_path, "w") as fh:
-        fh.write(code)
+    Uses Python-native int() for all bitwise ops so it works regardless of
+    how pandas stores the 64-bit address columns (uint64, object, etc.).
+    """
     try:
-        proc = subprocess.run(
-            [sys.executable, explore_path],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            cwd=_PROJECT_ROOT,
-        )
-        return proc.stdout, proc.stderr
-    except subprocess.TimeoutExpired:
-        return "", f"Exploration script timed out after {timeout}s — use nrows=50000 to limit data."
+        df = pd.read_csv(csv_path, nrows=nrows)
+        out = []
+        out.append(f"Sample: {len(df):,} rows  |  columns: {list(df.columns)}")
+
+        # 1. Class distribution
+        vc = df['decision'].value_counts().sort_index()
+        out.append("\n[1] CLASS DISTRIBUTION")
+        for lbl, cnt in vc.items():
+            name = "Keep" if lbl == 1 else "Evict"
+            out.append(f"  decision={lbl} ({name}): {cnt:,}  ({100*cnt/len(df):.1f}%)")
+
+        # 2. Access type vs eviction rate
+        type_names = {0: 'LOAD', 1: 'RFO', 2: 'PREFETCH', 3: 'WRITE', 4: 'TRANSLATION'}
+        out.append("\n[2] ACCESS TYPE vs EVICTION RATE")
+        for t in sorted(df['type'].unique()):
+            mask = df['type'] == t
+            evict_pct = 100 * (df.loc[mask, 'decision'] == 0).mean()
+            out.append(
+                f"  type={t} ({type_names.get(int(t), '?')}): "
+                f"{mask.sum():,} rows, {evict_pct:.1f}% evicted"
+            )
+
+        # 3. Page alignment: (ip >> 12) == (full_addr >> 12)
+        ip_page   = df['ip'].apply(lambda x: int(x) >> 12)
+        addr_page = df['full_addr'].apply(lambda x: int(x) >> 12)
+        same_page = ip_page == addr_page
+        out.append("\n[3] PAGE ALIGNMENT  (ip>>12 == full_addr>>12)")
+        for lbl, name in [(0, 'Evict'), (1, 'Keep')]:
+            mask = df['decision'] == lbl
+            out.append(f"  {name}: {100*same_page[mask].mean():.1f}% same page")
+        out.append(f"  Overall: {100*same_page.mean():.1f}% same page")
+
+        # 4. Address delta |ip - full_addr|
+        ip_int   = df['ip'].apply(int)
+        addr_int = df['full_addr'].apply(int)
+        delta    = (ip_int - addr_int).abs()
+        out.append("\n[4] ADDRESS DELTA  |ip - full_addr|")
+        for lbl, name in [(0, 'Evict'), (1, 'Keep')]:
+            mask = df['decision'] == lbl
+            d = delta[mask]
+            out.append(
+                f"  {name}: median={d.median():.0f}  mean={d.mean():.0f}"
+                f"  pct_<256: {100*(d<256).mean():.1f}%"
+            )
+
+        # 5. Way index per class
+        out.append("\n[5] WAY INDEX per class")
+        for lbl, name in [(0, 'Evict'), (1, 'Keep')]:
+            mask = df['decision'] == lbl
+            w = df.loc[mask, 'way']
+            out.append(f"  {name}: mean={w.mean():.2f}  max={w.max()}")
+
+        # 6. XOR Hamming weight popcount(ip ^ full_addr)
+        xor_val = ip_int ^ addr_int
+        hamming = xor_val.apply(lambda x: bin(int(x)).count('1'))
+        out.append("\n[6] XOR HAMMING WEIGHT  popcount(ip ^ full_addr)")
+        for lbl, name in [(0, 'Evict'), (1, 'Keep')]:
+            mask = df['decision'] == lbl
+            h = hamming[mask]
+            out.append(f"  {name}: mean={h.mean():.1f}  median={h.median():.0f}")
+
+        return "\n".join(out)
+
     except Exception as exc:
-        return "", f"Failed to run exploration script: {exc}"
+        return f"[Fixed exploration failed: {exc}]"
 
 
 def _is_low_diversity(history: list, window: int) -> bool:
@@ -406,7 +440,7 @@ def _format_feedback(iteration: int, metrics: dict) -> str:
 
 
 # numeric constant threshold (mirror from evaluator for messaging)
-CONSTANT_THRESHOLD = 5
+CONSTANT_THRESHOLD = 10
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -437,17 +471,16 @@ def run_pipeline(
 
     llm = get_wrapper(model_name)
 
-    # ── Read CSV headers once (fast: nrows=0) ─────────────────────────────
-    try:
-        csv_headers = list(pd.read_csv(csv_path, nrows=0).columns)
-    except Exception as exc:
-        print(f"  [WARN] Could not read CSV headers: {exc}")
-        csv_headers = ["triggering_cpu", "set", "way", "full_addr", "ip", "type", "timestamp", "decision"]
-
     history: list[dict] = []
     best    = {"final_fitness": -1.0, "code": None, "metrics": None, "iteration": -1}
     feedback    = ""
     prev_code   = None
+
+    # ── Run fixed exploration ONCE (deterministic — no LLM involved) ──────
+    print("  [Pre-run] Running deterministic data exploration…")
+    exploration_insights = _run_fixed_exploration(csv_path)
+    n_insight_lines = len(exploration_insights.splitlines())
+    print(f"  [Pre-run] Done — {n_insight_lines} insight lines ready\n")
 
     for i in range(1, n_iterations + 1):
         print(f"── Iteration {i:>2}/{n_iterations} ──────────────────────────")
@@ -456,37 +489,15 @@ def run_pipeline(
         if low_div:
             print("  [diversity] Low-diversity signal — prompting for new strategy")
 
-        # ── STEP 1: Exploration Prompt ────────────────────────────────────
-        print("  [Step 1/4] Requesting data exploration script…")
-        explore_prompt = _build_explore_prompt(csv_headers, csv_path)
-        try:
-            explore_raw = llm.send_pdf(explore_prompt, None)
-        except Exception as exc:
-            print(f"  [ERROR] Exploration LLM call failed: {exc}")
-            explore_raw = ""
-
-        explore_code = _extract_tag(explore_raw, "explore_data")
-        if not explore_code:
-            print("  [WARN] No <explore_data> tag found — skipping sandbox")
-            explore_stdout, explore_stderr = "", "LLM did not produce an <explore_data> block."
-        else:
-            # ── STEP 2: Sandbox Execution ─────────────────────────────────
-            print("  [Step 2/4] Running exploration script in sandbox…")
-            explore_stdout, explore_stderr = _run_exploration(explore_code)
-            if explore_stderr:
-                print(f"  [explore stderr] {explore_stderr[:200]}")
-            preview = explore_stdout[:300].replace("\n", " ")
-            print(f"  [explore stdout] {preview}{'…' if len(explore_stdout) > 300 else ''}")
-
-        # ── STEP 3: Generation Prompt ─────────────────────────────────────
-        print("  [Step 3/4] Requesting heuristic from exploration insights…")
+        # ── STEP 1: Generation Prompt ─────────────────────────────────────
+        print("  [Step 1/2] Requesting heuristic from exploration insights…")
         gen_prompt = _build_prompt(
             feedback           = feedback,
             prev_code          = prev_code,
             diversity_warning  = low_div,
             iteration          = i,
-            exploration_stdout = explore_stdout,
-            exploration_stderr = explore_stderr,
+            exploration_stdout = exploration_insights,
+            exploration_stderr = "",
         )
         try:
             gen_raw = llm.send_pdf(gen_prompt, None)
@@ -494,15 +505,14 @@ def run_pipeline(
         except Exception as exc:
             print(f"  [ERROR] Generation LLM call failed: {exc}")
             feedback = f"Iteration {i}: LLM call failed ({exc}). Please try again."
-            history.append({"iteration": i, "code": "", "metrics": None, "hash": "",
-                            "explore_stdout": explore_stdout[:500]})
+            history.append({"iteration": i, "code": "", "metrics": None, "hash": ""})
             continue
 
         fp = _fingerprint(code)
         print(f"  Code fingerprint : {fp}")
 
-        # ── STEP 4: Evaluate ──────────────────────────────────────────────
-        print("  [Step 4/4] Evaluating heuristic…")
+        # ── STEP 2: Evaluate ──────────────────────────────────────────────
+        print("  [Step 2/2] Evaluating heuristic…")
         metrics = evaluate_heuristic(code, csv_path=csv_path, target_col=target_col)
 
         if "error" in metrics:
@@ -546,11 +556,10 @@ def run_pipeline(
             prev_code = code
 
         history.append({
-            "iteration"      : i,
-            "code"           : code,
-            "metrics"        : metrics,
-            "hash"           : fp,
-            "explore_stdout" : explore_stdout[:500],
+            "iteration" : i,
+            "code"      : code,
+            "metrics"   : metrics,
+            "hash"      : fp,
         })
 
     # ── Final report ──────────────────────────────────────────────────────

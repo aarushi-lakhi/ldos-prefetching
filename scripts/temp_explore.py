@@ -1,57 +1,53 @@
 import pandas as pd
 import numpy as np
 
-# Load dataset with row limit for speed
+# Load data
 df = pd.read_csv('datasets/mcf_train_70.csv', nrows=50000)
 
-print("=" * 70)
-print("DATASET OVERVIEW")
-print("=" * 70)
-print(f"Shape: {df.shape}")
-print(f"\nDecision distribution:\n{df['decision'].value_counts()}")
-print(f"Decision proportions:\n{df['decision'].value_counts(normalize=True)}\n")
+print("=" * 80)
+print("CACHE REPLACEMENT HEURISTIC - DATA EXPLORATION")
+print("=" * 80)
+print(f"\nDataset shape: {df.shape}")
+print(f"Decision distribution:\n{df['decision'].value_counts(normalize=True)}\n")
 
-# Split by decision class
-df_keep = df[df['decision'] == 1]
-df_evict = df[df['decision'] == 0]
+# 1. Type distribution per class
+print("ACCESS TYPE distribution per decision class:")
+type_names = {0: 'LOAD', 1: 'RFO', 2: 'PREFETCH', 3: 'WRITE', 4: 'TRANSLATION'}
+for dec in [0, 1]:
+    subset = df[df['decision'] == dec]['type']
+    print(f"  Decision={dec}: {subset.value_counts().to_dict()}")
+print()
 
-print("=" * 70)
-print("ACCESS TYPE CORRELATION (0=LOAD, 1=RFO, 2=PREFETCH, 3=WRITE, 4=TRANSLATION)")
-print("=" * 70)
-print(f"Keep (decision=1):\n{df_keep['type'].value_counts(normalize=True)}")
-print(f"\nEvict (decision=0):\n{df_evict['type'].value_counts(normalize=True)}\n")
+# 2. Page-alignment: does (ip >> 12) == (full_addr >> 12)?
+df['ip_int64'] = df['ip'].astype('int64')
+df['addr_int64'] = df['full_addr'].astype('int64')
+df['page_match'] = (df['ip_int64'] >> 12) == (df['addr_int64'] >> 12)
+print("PAGE ALIGNMENT (ip_page == addr_page) by decision:")
+page_corr = pd.crosstab(df['page_match'], df['decision'], margins=True)
+print(page_corr)
+print()
 
-# Page alignment: check if (ip >> 12) == (full_addr >> 12)
-df['page_aligned'] = (df['ip'] >> 12) == (df['full_addr'] >> 12)
-print("=" * 70)
-print("PAGE ALIGNMENT ANALYSIS")
-print("=" * 70)
-print(f"Keep (decision=1): {df_keep['page_aligned'].value_counts(normalize=True).to_dict()}")
-print(f"Evict (decision=0): {df_evict['page_aligned'].value_counts(normalize=True).to_dict()}\n")
+# 3. Low-order bits: last 6 bits of ip and full_addr
+df['ip_low6'] = df['ip_int64'] & 0x3F
+df['addr_low6'] = df['addr_int64'] & 0x3F
+print("IP low 6 bits (mean) by decision:", df.groupby('decision')['ip_low6'].mean().to_dict())
+print("ADDR low 6 bits (mean) by decision:", df.groupby('decision')['addr_low6'].mean().to_dict())
+print()
 
-# Low-order bits patterns
-print("=" * 70)
-print("LOW-ORDER BITS ANALYSIS")
-print("=" * 70)
-df['ip_low6'] = df['ip'] & 0x3F
-df['addr_low6'] = df['full_addr'] & 0x3F
-print(f"IP low 6 bits (Keep):\n{df_keep['ip_low6'].value_counts().head(5)}")
-print(f"\nIP low 6 bits (Evict):\n{df_evict['ip_low6'].value_counts().head(5)}")
-print(f"\nAddr low 6 bits (Keep):\n{df_keep['addr_low6'].value_counts().head(5)}")
-print(f"\nAddr low 6 bits (Evict):\n{df_evict['addr_low6'].value_counts().head(5)}\n")
+# 4. Set and Way distribution
+print("SET distribution by decision (first 5 values):")
+print(df.groupby('decision')['set'].value_counts().head(10))
+print("\nWAY distribution by decision:")
+print(pd.crosstab(df['way'], df['decision'], margins=True))
+print()
 
-# Set and way distribution
-print("=" * 70)
-print("SET & WAY DISTRIBUTION")
-print("=" * 70)
-print(f"Set cardinality (Keep): {df_keep['set'].nunique()}, (Evict): {df_evict['set'].nunique()}")
-print(f"Way cardinality (Keep): {df_keep['way'].nunique()}, (Evict): {df_evict['way'].nunique()}")
-print(f"Way distribution (Keep):\n{df_keep['way'].value_counts(normalize=True)}")
-print(f"Way distribution (Evict):\n{df_evict['way'].value_counts(normalize=True)}\n")
+# 5. Hit rate by decision
+print("HIT distribution by decision:")
+print(pd.crosstab(df['hit'], df['decision'], margins=True))
+print()
 
-# Hit ratio by decision
-print("=" * 70)
-print("HIT BEHAVIOR")
-print("=" * 70)
-print(f"Hit rate (Keep): {df_keep['hit'].mean():.3f}")
-print(f"Hit rate (Evict): {df_evict['hit'].mean():.3f}\n")
+# 6. CPU distribution
+print("CPU distribution by decision:")
+print(pd.crosstab(df['triggering_cpu'], df['decision'], margins=True))
+
+print("\n" + "=" * 80)

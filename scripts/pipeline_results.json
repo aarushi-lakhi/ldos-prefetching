@@ -1,180 +1,172 @@
 {
-  "timestamp": "2026-04-21T21:11:37.707983",
+  "timestamp": "2026-04-22T19:39:44.654464",
   "model": "claude-haiku4.5",
   "iterations_run": 50,
   "dataset": "datasets/mcf_train_70.csv",
   "target_col": "decision",
   "best": {
-    "final_fitness": 0.3631,
-    "code": "access_type = row['type']\n\n# Non-LOAD types are almost never evicted (decision=0 only for LOAD)\nif access_type != 0:\n    return 1\n\n# From here: access_type == 0 (LOAD)\n# LOAD has ~20% eviction rate; need to separate classes with minimal constants\n\nip = row['ip']\naddr = row['full_addr']\n\n# Page-level alignment (strongest predictor)\nip_page = ip >> 12\naddr_page = addr >> 12\n\n# Same page = strong cache-friendly signal\nif ip_page == addr_page:\n    return 2\n\n# Different pages: use page distance and bit-level correlation\npage_dist = abs(ip_page - addr_page)\n\n# Cache line offset (low 6 bits)\nip_offset = ip & 63\naddr_offset = addr & 63\n\n# Compute XOR for bit-level proximity (Hamming distance as tiebreaker)\nxor_val = ip ^ addr\nbit_dist = bin(xor_val).count('1')\n\n# Combine signals: nearby pages + low bit distance = reuse likely\nscore = 0\n\nif page_dist < 16:\n    score += 2\nelif page_dist < 256:\n    score += 1\n\nif bit_dist < 20:\n    score += 1\nelif bit_dist > 48:\n    score -= 2\n\n# Offset correlation as refinement\nif ip_offset == addr_offset:\n    score += 1\nelif abs(ip_offset - addr_offset) > 32:\n    score -= 1\n\nreturn score",
+    "final_fitness": 0.8596,
+    "code": "access_type = row['type']\n\n# RFO (1) and TRANSLATION (4) are almost never evicted \u2192 strong keep signal\nif access_type == 1 or access_type == 4:\n    return 100\n\nip = row['ip']\naddr = row['full_addr']\nway_idx = row['way']\n\n# Primary signal: XOR Hamming weight between ip and addr\n# Evict median=26, Keep median=13 \u2192 strongest differentiator\nxor_val = ip ^ addr\nhamming = bin(xor_val).count('1')\n\n# Secondary signal: Way index (Evict mean=1.48, Keep mean=4.58)\nway_signal = way_idx\n\n# Hamming score: normalize around observed median split (26 vs 13)\nhamming_score = 26 - hamming\n\n# Way score: threshold naturally between means (1.48 and 4.58)\nway_score = (way_signal - 3) * 3\n\n# Combine signals\nscore = hamming_score + way_score\n\nreturn score",
     "metrics": {
-      "raw_accuracy": 0.8285,
-      "balanced_accuracy": 0.8715,
-      "precision": 0.9982,
-      "recall": 0.7458,
-      "f1": 0.8537,
-      "acc_class0": 0.9972,
-      "acc_class1": 0.7458,
-      "n_constants": 19,
-      "complexity_penalty": 0.4167,
-      "final_fitness": 0.3631,
+      "raw_accuracy": 0.8515,
+      "balanced_accuracy": 0.8596,
+      "precision": 0.9359,
+      "recall": 0.8359,
+      "f1": 0.8831,
+      "acc_class0": 0.8834,
+      "acc_class1": 0.8359,
+      "n_constants": 6,
+      "complexity_penalty": 1.0,
+      "final_fitness": 0.8596,
       "n_samples": 50000,
       "errors": 0
     },
-    "iteration": 25
+    "iteration": 42
   },
   "history": [
     {
       "iteration": 1,
       "metrics": {
-        "raw_accuracy": 0.5828,
-        "balanced_accuracy": 0.5334,
-        "precision": 0.6933,
-        "recall": 0.678,
-        "f1": 0.6855,
-        "acc_class0": 0.3888,
-        "acc_class1": 0.678,
-        "n_constants": 24,
-        "complexity_penalty": 0.3448,
-        "final_fitness": 0.1839,
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
+        "precision": 1.0,
+        "recall": 0.051,
+        "f1": 0.097,
+        "acc_class0": 1.0,
+        "acc_class1": 0.051,
+        "n_constants": 18,
+        "complexity_penalty": 0.5556,
+        "final_fitness": 0.2919,
         "n_samples": 50000,
-        "errors": 0
+        "errors": 48290
       },
-      "hash": "95a320b6e9",
-      "explore_stdout": "======================================================================\nDATASET OVERVIEW\n======================================================================\nShape: (50000, 10)\nDecision distribution:\ndecision\n1    40100\n0     9900\nName: count, dtype: int64\n\n======================================================================\n1. ACCESS TYPE vs EVICTION RATE\n======================================================================\n      total  evictions  evict_rate_%\ntype                          "
+      "hash": "e93228269a"
     },
     {
       "iteration": 2,
       "metrics": {
-        "raw_accuracy": 0.3722,
-        "balanced_accuracy": 0.5321,
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
         "precision": 1.0,
-        "recall": 0.0641,
-        "f1": 0.1205,
+        "recall": 0.051,
+        "f1": 0.097,
         "acc_class0": 1.0,
-        "acc_class1": 0.0641,
-        "n_constants": 25,
-        "complexity_penalty": 0.3333,
-        "final_fitness": 0.1774,
+        "acc_class1": 0.051,
+        "n_constants": 15,
+        "complexity_penalty": 0.6667,
+        "final_fitness": 0.3503,
         "n_samples": 50000,
-        "errors": 0
+        "errors": 48290
       },
-      "hash": "da185b64dd",
-      "explore_stdout": "======================================================================\nDATASET OVERVIEW\n======================================================================\nShape: (50000, 10)\n\nDecision distribution:\ndecision\n1    40100\n0     9900\nName: count, dtype: int64\nDecision %:\ndecision\n1    80.2\n0    19.8\nName: proportion, dtype: float64\n\n======================================================================\nTYPE CORRELATION WITH EVICTION\n================================================================"
+      "hash": "5941bd6d02"
     },
     {
       "iteration": 3,
       "metrics": {
-        "raw_accuracy": 0.3772,
-        "balanced_accuracy": 0.5088,
-        "precision": 0.7036,
-        "recall": 0.1238,
-        "f1": 0.2105,
-        "acc_class0": 0.8937,
-        "acc_class1": 0.1238,
-        "n_constants": 23,
-        "complexity_penalty": 0.3571,
-        "final_fitness": 0.1817,
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
+        "precision": 1.0,
+        "recall": 0.051,
+        "f1": 0.097,
+        "acc_class0": 1.0,
+        "acc_class1": 0.051,
+        "n_constants": 10,
+        "complexity_penalty": 1.0,
+        "final_fitness": 0.5255,
         "n_samples": 50000,
-        "errors": 0
+        "errors": 48290
       },
-      "hash": "f86f55db85",
-      "explore_stdout": "======================================================================\nDATASET OVERVIEW\n======================================================================\nShape: (50000, 10)\nDecision distribution:\ndecision\n1    0.802\n0    0.198\nName: proportion, dtype: float64\n\n======================================================================\nACCESS TYPE vs DECISION (0=LOAD, 1=RFO, 2=PREFETCH, 3=WRITE, 4=TRANSLATION)\n======================================================================\ndecision      0 "
+      "hash": "ce4147deda"
     },
     {
       "iteration": 4,
       "metrics": {
-        "raw_accuracy": 0.3839,
-        "balanced_accuracy": 0.5345,
-        "precision": 0.8862,
-        "recall": 0.0935,
-        "f1": 0.1692,
-        "acc_class0": 0.9755,
-        "acc_class1": 0.0935,
-        "n_constants": 26,
-        "complexity_penalty": 0.3226,
-        "final_fitness": 0.1724,
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
+        "precision": 1.0,
+        "recall": 0.051,
+        "f1": 0.097,
+        "acc_class0": 1.0,
+        "acc_class1": 0.051,
+        "n_constants": 28,
+        "complexity_penalty": 0.3571,
+        "final_fitness": 0.1877,
         "n_samples": 50000,
-        "errors": 0
+        "errors": 48290
       },
-      "hash": "d1e67729c8",
-      "explore_stdout": "======================================================================\nCACHE REPLACEMENT HEURISTIC - DATA EXPLORATION\n======================================================================\n\nDataset shape: (50000, 10)\nDecision distribution:\ndecision\n1    0.802\n0    0.198\nName: proportion, dtype: float64\n\nACCESS TYPE vs DECISION:\ndecision         0         1\ntype                        \n0         0.202206  0.797794\n1         0.000000  1.000000\n4         0.000000  1.000000\n\n"
+      "hash": "51fb6dd940"
     },
     {
       "iteration": 5,
       "metrics": {
-        "raw_accuracy": 0.3925,
-        "balanced_accuracy": 0.5472,
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
         "precision": 1.0,
-        "recall": 0.0944,
-        "f1": 0.1726,
+        "recall": 0.051,
+        "f1": 0.097,
         "acc_class0": 1.0,
-        "acc_class1": 0.0944,
-        "n_constants": 25,
-        "complexity_penalty": 0.3333,
-        "final_fitness": 0.1824,
+        "acc_class1": 0.051,
+        "n_constants": 11,
+        "complexity_penalty": 0.9091,
+        "final_fitness": 0.4777,
         "n_samples": 50000,
-        "errors": 0
+        "errors": 48290
       },
-      "hash": "2f23471d8c",
-      "explore_stdout": "================================================================================\nDATASET OVERVIEW\n================================================================================\nShape: (50000, 10)\n\nDecision distribution:\ndecision\n1    40100\n0     9900\nName: count, dtype: int64\nDecision proportions:\ndecision\n1    0.802\n0    0.198\nName: proportion, dtype: float64\n\n================================================================================\nACCESS TYPE CORRELATION WITH EVICTION\n==============="
+      "hash": "493252e7f1"
     },
     {
       "iteration": 6,
       "metrics": {
-        "raw_accuracy": 0.3722,
-        "balanced_accuracy": 0.5291,
-        "precision": 0.9252,
-        "recall": 0.0697,
-        "f1": 0.1296,
-        "acc_class0": 0.9885,
-        "acc_class1": 0.0697,
-        "n_constants": 25,
-        "complexity_penalty": 0.3333,
-        "final_fitness": 0.1764,
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
+        "precision": 1.0,
+        "recall": 0.051,
+        "f1": 0.097,
+        "acc_class0": 1.0,
+        "acc_class1": 0.051,
+        "n_constants": 10,
+        "complexity_penalty": 1.0,
+        "final_fitness": 0.5255,
         "n_samples": 50000,
-        "errors": 0
+        "errors": 48290
       },
-      "hash": "63043baf04",
-      "explore_stdout": "======================================================================\nDATASET OVERVIEW\n======================================================================\nShape: (50000, 10)\nDecision distribution:\ndecision\n1    40100\n0     9900\nName: count, dtype: int64\n\n======================================================================\nACCESS TYPE vs DECISION\n======================================================================\ndecision        0      1    All\ntype                           \nLOAD       "
+      "hash": "ed39d54b6f"
     },
     {
       "iteration": 7,
       "metrics": {
-        "raw_accuracy": 0.3635,
+        "raw_accuracy": 0.3634,
         "balanced_accuracy": 0.5255,
         "precision": 1.0,
-        "recall": 0.0511,
-        "f1": 0.0972,
+        "recall": 0.051,
+        "f1": 0.097,
         "acc_class0": 1.0,
-        "acc_class1": 0.0511,
-        "n_constants": 27,
-        "complexity_penalty": 0.3125,
-        "final_fitness": 0.1642,
+        "acc_class1": 0.051,
+        "n_constants": 17,
+        "complexity_penalty": 0.5882,
+        "final_fitness": 0.3091,
         "n_samples": 50000,
-        "errors": 0
+        "errors": 48290
       },
-      "hash": "0db5fce908",
-      "explore_stdout": "======================================================================\nDATASET OVERVIEW\n======================================================================\nShape: (50000, 10)\nDecision distribution:\ndecision\n1    40100\n0     9900\nName: count, dtype: int64\n\n======================================================================\nACCESS TYPE CORRELATION WITH EVICTION\n======================================================================\n      total   kept  eviction_rate_%\ntype                     "
+      "hash": "155166a32b"
     },
     {
       "iteration": 8,
       "metrics": {
-        "raw_accuracy": 0.3737,
-        "balanced_accuracy": 0.5331,
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
         "precision": 1.0,
-        "recall": 0.0663,
-        "f1": 0.1243,
+        "recall": 0.051,
+        "f1": 0.097,
         "acc_class0": 1.0,
-        "acc_class1": 0.0663,
-        "n_constants": 30,
-        "complexity_penalty": 0.2857,
-        "final_fitness": 0.1523,
+        "acc_class1": 0.051,
+        "n_constants": 26,
+        "complexity_penalty": 0.3846,
+        "final_fitness": 0.2021,
         "n_samples": 50000,
-        "errors": 0
+        "errors": 48290
       },
-      "hash": "3cef247293",
-      "explore_stdout": "======================================================================\nCACHE REPLACEMENT HEURISTIC - DATA EXPLORATION\n======================================================================\n\nDataset shape: (50000, 10)\nDecision distribution:\ndecision\n1    40100\n0     9900\nName: count, dtype: int64\n\n1. ACCESS TYPE vs EVICTION DECISION\n      count    sum  <lambda_0>\ntype                          \n0     48960  39060   20.220588\n1        48     48    0.000000\n4       992    992    0.000000\n   (Type: 0"
+      "hash": "98f924dbed"
     },
     {
       "iteration": 9,
@@ -186,14 +178,13 @@
         "f1": 0.097,
         "acc_class0": 1.0,
         "acc_class1": 0.051,
-        "n_constants": 30,
-        "complexity_penalty": 0.2857,
-        "final_fitness": 0.1501,
+        "n_constants": 32,
+        "complexity_penalty": 0.3125,
+        "final_fitness": 0.1642,
         "n_samples": 50000,
-        "errors": 0
+        "errors": 48290
       },
-      "hash": "4d59b55a9d",
-      "explore_stdout": "=== DATASET OVERVIEW ===\nShape: (50000, 10)\nDecision distribution:\ndecision\n1    40100\n0     9900\nName: count, dtype: int64\n\n\n=== EVICT (0) (n=9900) ===\nType distribution: {0: np.int64(9900)}\nHit rate: 0.000\nSet range: [0, 15]\nWay distribution: {0: np.int64(2598), 2: np.int64(2457), 3: np.int64(2441), 1: np.int64(2404)}\n\n=== KEEP (1) (n=40100) ===\nType distribution: {0: np.int64(39060), 4: np.int64(992), 1: np.int64(48)}\nHit rate: 0.000\nSet range: [0, 2047]\nWay distribution: {2: np.int64(5387), "
+      "hash": "f0eee0e2d4"
     },
     {
       "iteration": 10,
@@ -205,14 +196,13 @@
         "f1": 0.097,
         "acc_class0": 1.0,
         "acc_class1": 0.051,
-        "n_constants": 23,
-        "complexity_penalty": 0.3571,
-        "final_fitness": 0.1877,
+        "n_constants": 8,
+        "complexity_penalty": 1.0,
+        "final_fitness": 0.5255,
         "n_samples": 50000,
-        "errors": 0
+        "errors": 48290
       },
-      "hash": "b966f18914",
-      "explore_stdout": "======================================================================\nDATASET OVERVIEW\n======================================================================\nShape: (50000, 10)\nDecision distribution:\ndecision\n1    40100\n0     9900\nName: count, dtype: int64\n\n======================================================================\n1. ACCESS TYPE CORRELATION WITH EVICTION\n======================================================================\n      total_accesses  keep_count  evict_rate_%\ntype       "
+      "hash": "b0ff576bec"
     },
     {
       "iteration": 11,
@@ -225,89 +215,84 @@
         "acc_class0": 1.0,
         "acc_class1": 0.051,
         "n_constants": 25,
-        "complexity_penalty": 0.3333,
-        "final_fitness": 0.1752,
+        "complexity_penalty": 0.4,
+        "final_fitness": 0.2102,
         "n_samples": 50000,
-        "errors": 0
+        "errors": 48290
       },
-      "hash": "3a260f8417",
-      "explore_stdout": "======================================================================\nDATASET OVERVIEW\n======================================================================\nShape: (50000, 10)\nDecision distribution:\ndecision\n1    0.802\n0    0.198\nName: proportion, dtype: float64\n\n======================================================================\nACCESS TYPE CORRELATION WITH EVICTION\n======================================================================\n       kept  total  eviction_rate_%\ntype              "
+      "hash": "c2e5f1636f"
     },
     {
       "iteration": 12,
       "metrics": {
-        "raw_accuracy": 0.3637,
-        "balanced_accuracy": 0.5257,
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
         "precision": 1.0,
-        "recall": 0.0515,
-        "f1": 0.0979,
+        "recall": 0.051,
+        "f1": 0.097,
         "acc_class0": 1.0,
-        "acc_class1": 0.0515,
-        "n_constants": 28,
-        "complexity_penalty": 0.303,
-        "final_fitness": 0.1593,
+        "acc_class1": 0.051,
+        "n_constants": 14,
+        "complexity_penalty": 0.7143,
+        "final_fitness": 0.3754,
         "n_samples": 50000,
-        "errors": 0
+        "errors": 48290
       },
-      "hash": "d5f4e96cdf",
-      "explore_stdout": "======================================================================\nCACHE REPLACEMENT HEURISTIC - DATA EXPLORATION\n======================================================================\n\nDataset shape: (50000, 10)\nDecision distribution:\ndecision\n1    40100\n0     9900\nName: count, dtype: int64\nDecision proportions:\ndecision\n1    0.802\n0    0.198\nName: proportion, dtype: float64\n\n======================================================================\nCLASS 0 (EVICT, ~3%) vs CLASS 1 (KEEP, ~97%)\n"
+      "hash": "732256d2c1"
     },
     {
       "iteration": 13,
       "metrics": {
-        "raw_accuracy": 0.388,
-        "balanced_accuracy": 0.5438,
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
         "precision": 1.0,
-        "recall": 0.0877,
-        "f1": 0.1612,
+        "recall": 0.051,
+        "f1": 0.097,
         "acc_class0": 1.0,
-        "acc_class1": 0.0877,
-        "n_constants": 28,
-        "complexity_penalty": 0.303,
-        "final_fitness": 0.1648,
+        "acc_class1": 0.051,
+        "n_constants": 8,
+        "complexity_penalty": 1.0,
+        "final_fitness": 0.5255,
         "n_samples": 50000,
-        "errors": 0
+        "errors": 48290
       },
-      "hash": "a2fe2ff320",
-      "explore_stdout": "======================================================================\nDATASET OVERVIEW\n======================================================================\nShape: (50000, 10)\nDecision distribution:\ndecision\n1    40100\n0     9900\nName: count, dtype: int64\n\n\n======================================================================\nEVICT (0) - 9900 rows (19.8%)\n======================================================================\nType distribution:\ntype\n0    9900\nName: count, dtype: int64\n\nIP rang"
+      "hash": "40e4cb670e"
     },
     {
       "iteration": 14,
       "metrics": {
-        "raw_accuracy": 0.3643,
-        "balanced_accuracy": 0.5261,
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
         "precision": 1.0,
-        "recall": 0.0523,
-        "f1": 0.0993,
+        "recall": 0.051,
+        "f1": 0.097,
         "acc_class0": 1.0,
-        "acc_class1": 0.0523,
-        "n_constants": 23,
-        "complexity_penalty": 0.3571,
-        "final_fitness": 0.1879,
+        "acc_class1": 0.051,
+        "n_constants": 16,
+        "complexity_penalty": 0.625,
+        "final_fitness": 0.3284,
         "n_samples": 50000,
-        "errors": 0
+        "errors": 48290
       },
-      "hash": "6fb3b3eeff",
-      "explore_stdout": "======================================================================\nDATASET OVERVIEW\n======================================================================\nShape: (50000, 10)\nDecision distribution:\ndecision\n1    0.802\n0    0.198\nName: proportion, dtype: float64\n\n======================================================================\nACCESS TYPE CORRELATION WITH EVICTION\n======================================================================\n      keep_count  total  eviction_rate\ntype           "
+      "hash": "a681ec161d"
     },
     {
       "iteration": 15,
       "metrics": {
-        "raw_accuracy": 0.3696,
-        "balanced_accuracy": 0.528,
-        "precision": 0.9406,
-        "recall": 0.0643,
-        "f1": 0.1203,
-        "acc_class0": 0.9917,
-        "acc_class1": 0.0643,
-        "n_constants": 30,
-        "complexity_penalty": 0.2857,
-        "final_fitness": 0.1509,
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
+        "precision": 1.0,
+        "recall": 0.051,
+        "f1": 0.097,
+        "acc_class0": 1.0,
+        "acc_class1": 0.051,
+        "n_constants": 13,
+        "complexity_penalty": 0.7692,
+        "final_fitness": 0.4042,
         "n_samples": 50000,
-        "errors": 0
+        "errors": 48290
       },
-      "hash": "5ffe76ce56",
-      "explore_stdout": "======================================================================\nDATASET OVERVIEW\n======================================================================\nShape: (50000, 10)\nDecision distribution:\ndecision\n1    40100\n0     9900\nName: count, dtype: int64\n\n======================================================================\n1. ACCESS TYPE CORRELATION WITH EVICTION\n======================================================================\ndecision         0         1\ntype                        \n"
+      "hash": "45707c990c"
     },
     {
       "iteration": 16,
@@ -319,14 +304,13 @@
         "f1": 0.097,
         "acc_class0": 1.0,
         "acc_class1": 0.051,
-        "n_constants": 22,
-        "complexity_penalty": 0.3704,
-        "final_fitness": 0.1946,
+        "n_constants": 13,
+        "complexity_penalty": 0.7692,
+        "final_fitness": 0.4042,
         "n_samples": 50000,
         "errors": 48290
       },
-      "hash": "064df332d9",
-      "explore_stdout": "======================================================================\nDATASET OVERVIEW\n======================================================================\nShape: (50000, 10)\n\nDecision distribution:\ndecision\n1    40100\n0     9900\nName: count, dtype: int64\n\nClass 0 (evict): 9900 rows (19.8%)\nClass 1 (keep):  40100 rows (80.2%)\n\n======================================================================\nACCESS TYPE (0=LOAD, 1=RFO, 2=PREFETCH, 3=WRITE, 4=TRANSLATION)\n================================="
+      "hash": "917b4fc703"
     },
     {
       "iteration": 17,
@@ -338,14 +322,13 @@
         "f1": 0.097,
         "acc_class0": 1.0,
         "acc_class1": 0.051,
-        "n_constants": 19,
-        "complexity_penalty": 0.4167,
-        "final_fitness": 0.219,
+        "n_constants": 13,
+        "complexity_penalty": 0.7692,
+        "final_fitness": 0.4042,
         "n_samples": 50000,
         "errors": 48290
       },
-      "hash": "e94c323ca0",
-      "explore_stdout": "======================================================================\nDATASET OVERVIEW\n======================================================================\nShape: (50000, 10)\n\nDecision distribution:\ndecision\n1    40100\n0     9900\nName: count, dtype: int64\n\n======================================================================\nACCESS TYPE DISTRIBUTION BY DECISION\n======================================================================\n\nDecision=0 (9900 rows):\n  LOAD: 9900 (100.0%)\n\nDecision=1 (4"
+      "hash": "06adbd7549"
     },
     {
       "iteration": 18,
@@ -357,14 +340,13 @@
         "f1": 0.097,
         "acc_class0": 1.0,
         "acc_class1": 0.051,
-        "n_constants": 19,
-        "complexity_penalty": 0.4167,
-        "final_fitness": 0.219,
+        "n_constants": 26,
+        "complexity_penalty": 0.3846,
+        "final_fitness": 0.2021,
         "n_samples": 50000,
         "errors": 48290
       },
-      "hash": "fbc82418e0",
-      "explore_stdout": "======================================================================\nDATASET OVERVIEW\n======================================================================\nShape: (50000, 10)\n\nDecision distribution:\ndecision\n1    0.802\n0    0.198\nName: proportion, dtype: float64\n\n======================================================================\nACCESS TYPE CORRELATION WITH EVICTION\n======================================================================\ndecision         0         1\ntype                    "
+      "hash": "bd8fa314f6"
     },
     {
       "iteration": 19,
@@ -376,14 +358,13 @@
         "f1": 0.097,
         "acc_class0": 1.0,
         "acc_class1": 0.051,
-        "n_constants": 19,
-        "complexity_penalty": 0.4167,
-        "final_fitness": 0.219,
+        "n_constants": 8,
+        "complexity_penalty": 1.0,
+        "final_fitness": 0.5255,
         "n_samples": 50000,
         "errors": 48290
       },
-      "hash": "cf0c5d0f90",
-      "explore_stdout": "======================================================================\nCACHE REPLACEMENT HEURISTIC - DATA EXPLORATION\n======================================================================\n\nDataset shape: (50000, 10)\nDecision distribution:\ndecision\n1    40100\n0     9900\nName: count, dtype: int64\nDecision ratio (0/1): 0.2469\n\n======================================================================\nACCESS TYPE vs DECISION\n======================================================================\ndecisio"
+      "hash": "e037040a08"
     },
     {
       "iteration": 20,
@@ -395,14 +376,13 @@
         "f1": 0.097,
         "acc_class0": 1.0,
         "acc_class1": 0.051,
-        "n_constants": 29,
-        "complexity_penalty": 0.2941,
-        "final_fitness": 0.1546,
+        "n_constants": 11,
+        "complexity_penalty": 0.9091,
+        "final_fitness": 0.4777,
         "n_samples": 50000,
         "errors": 48290
       },
-      "hash": "3d5e92126a",
-      "explore_stdout": "======================================================================\nCACHE REPLACEMENT HEURISTIC - DATA EXPLORATION\n======================================================================\n\nDataset shape: (50000, 10)\nDecision distribution:\ndecision\n1    0.802\n0    0.198\nName: proportion, dtype: float64\n\n1. ACCESS TYPE vs EVICTION\n        type_name  evict_rate_%  total\ntype                                  \n0            LOAD     20.220588  48960\n1             RFO      0.000000     48\n4     TRANSL"
+      "hash": "1212b75b35"
     },
     {
       "iteration": 21,
@@ -414,14 +394,13 @@
         "f1": 0.097,
         "acc_class0": 1.0,
         "acc_class1": 0.051,
-        "n_constants": 21,
-        "complexity_penalty": 0.3846,
-        "final_fitness": 0.2021,
+        "n_constants": 9,
+        "complexity_penalty": 1.0,
+        "final_fitness": 0.5255,
         "n_samples": 50000,
         "errors": 48290
       },
-      "hash": "df56ca5609",
-      "explore_stdout": "================================================================================\nDATASET OVERVIEW\n================================================================================\nShape: (50000, 10)\n\nDecision distribution:\ndecision\n1    0.802\n0    0.198\nName: proportion, dtype: float64\n\n================================================================================\nACCESS TYPE CORRELATION WITH EVICTION\n================================================================================\n      Keep_Co"
+      "hash": "28ed2bcebe"
     },
     {
       "iteration": 22,
@@ -433,14 +412,13 @@
         "f1": 0.097,
         "acc_class0": 1.0,
         "acc_class1": 0.051,
-        "n_constants": 24,
-        "complexity_penalty": 0.3448,
-        "final_fitness": 0.1812,
+        "n_constants": 14,
+        "complexity_penalty": 0.7143,
+        "final_fitness": 0.3754,
         "n_samples": 50000,
         "errors": 48290
       },
-      "hash": "9efb6631ff",
-      "explore_stdout": "======================================================================\nCACHE REPLACEMENT HEURISTIC - DATA EXPLORATION\n======================================================================\n\nDataset shape: (50000, 10)\nDecision distribution:\ndecision\n1    0.802\n0    0.198\nName: proportion, dtype: float64\n\n1. ACCESS TYPE vs DECISION\ndecision     0      1\ntype                 \n0         9900  39060\n1            0     48\n4            0    992\nType meaning: 0=LOAD, 1=RFO, 2=PREFETCH, 3=WRITE, 4=TRANSL"
+      "hash": "5b496d60e9"
     },
     {
       "iteration": 23,
@@ -452,527 +430,499 @@
         "f1": 0.097,
         "acc_class0": 1.0,
         "acc_class1": 0.051,
-        "n_constants": 14,
+        "n_constants": 11,
+        "complexity_penalty": 0.9091,
+        "final_fitness": 0.4777,
+        "n_samples": 50000,
+        "errors": 48290
+      },
+      "hash": "f1e02b3a89"
+    },
+    {
+      "iteration": 24,
+      "metrics": {
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
+        "precision": 1.0,
+        "recall": 0.051,
+        "f1": 0.097,
+        "acc_class0": 1.0,
+        "acc_class1": 0.051,
+        "n_constants": 15,
+        "complexity_penalty": 0.6667,
+        "final_fitness": 0.3503,
+        "n_samples": 50000,
+        "errors": 48290
+      },
+      "hash": "94c14d064c"
+    },
+    {
+      "iteration": 25,
+      "metrics": {
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
+        "precision": 1.0,
+        "recall": 0.051,
+        "f1": 0.097,
+        "acc_class0": 1.0,
+        "acc_class1": 0.051,
+        "n_constants": 11,
+        "complexity_penalty": 0.9091,
+        "final_fitness": 0.4777,
+        "n_samples": 50000,
+        "errors": 48290
+      },
+      "hash": "b76572a7e5"
+    },
+    {
+      "iteration": 26,
+      "metrics": {
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
+        "precision": 1.0,
+        "recall": 0.051,
+        "f1": 0.097,
+        "acc_class0": 1.0,
+        "acc_class1": 0.051,
+        "n_constants": 12,
+        "complexity_penalty": 0.8333,
+        "final_fitness": 0.4379,
+        "n_samples": 50000,
+        "errors": 48290
+      },
+      "hash": "dad140073d"
+    },
+    {
+      "iteration": 27,
+      "metrics": {
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
+        "precision": 1.0,
+        "recall": 0.051,
+        "f1": 0.097,
+        "acc_class0": 1.0,
+        "acc_class1": 0.051,
+        "n_constants": 11,
+        "complexity_penalty": 0.9091,
+        "final_fitness": 0.4777,
+        "n_samples": 50000,
+        "errors": 48290
+      },
+      "hash": "8d32daef39"
+    },
+    {
+      "iteration": 28,
+      "metrics": {
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
+        "precision": 1.0,
+        "recall": 0.051,
+        "f1": 0.097,
+        "acc_class0": 1.0,
+        "acc_class1": 0.051,
+        "n_constants": 18,
+        "complexity_penalty": 0.5556,
+        "final_fitness": 0.2919,
+        "n_samples": 50000,
+        "errors": 48290
+      },
+      "hash": "7cdb83d9f8"
+    },
+    {
+      "iteration": 29,
+      "metrics": {
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
+        "precision": 1.0,
+        "recall": 0.051,
+        "f1": 0.097,
+        "acc_class0": 1.0,
+        "acc_class1": 0.051,
+        "n_constants": 9,
+        "complexity_penalty": 1.0,
+        "final_fitness": 0.5255,
+        "n_samples": 50000,
+        "errors": 48290
+      },
+      "hash": "c9e34e49a0"
+    },
+    {
+      "iteration": 30,
+      "metrics": {
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
+        "precision": 1.0,
+        "recall": 0.051,
+        "f1": 0.097,
+        "acc_class0": 1.0,
+        "acc_class1": 0.051,
+        "n_constants": 17,
+        "complexity_penalty": 0.5882,
+        "final_fitness": 0.3091,
+        "n_samples": 50000,
+        "errors": 48290
+      },
+      "hash": "9b63e7214a"
+    },
+    {
+      "iteration": 31,
+      "metrics": {
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
+        "precision": 1.0,
+        "recall": 0.051,
+        "f1": 0.097,
+        "acc_class0": 1.0,
+        "acc_class1": 0.051,
+        "n_constants": 11,
+        "complexity_penalty": 0.9091,
+        "final_fitness": 0.4777,
+        "n_samples": 50000,
+        "errors": 48290
+      },
+      "hash": "260d74a00f"
+    },
+    {
+      "iteration": 32,
+      "metrics": {
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
+        "precision": 1.0,
+        "recall": 0.051,
+        "f1": 0.097,
+        "acc_class0": 1.0,
+        "acc_class1": 0.051,
+        "n_constants": 12,
+        "complexity_penalty": 0.8333,
+        "final_fitness": 0.4379,
+        "n_samples": 50000,
+        "errors": 48290
+      },
+      "hash": "502ff79905"
+    },
+    {
+      "iteration": 33,
+      "metrics": {
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
+        "precision": 1.0,
+        "recall": 0.051,
+        "f1": 0.097,
+        "acc_class0": 1.0,
+        "acc_class1": 0.051,
+        "n_constants": 12,
+        "complexity_penalty": 0.8333,
+        "final_fitness": 0.4379,
+        "n_samples": 50000,
+        "errors": 48290
+      },
+      "hash": "580a0f0da7"
+    },
+    {
+      "iteration": 34,
+      "metrics": {
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
+        "precision": 1.0,
+        "recall": 0.051,
+        "f1": 0.097,
+        "acc_class0": 1.0,
+        "acc_class1": 0.051,
+        "n_constants": 22,
+        "complexity_penalty": 0.4545,
+        "final_fitness": 0.2389,
+        "n_samples": 50000,
+        "errors": 48290
+      },
+      "hash": "0a3b0c488c"
+    },
+    {
+      "iteration": 35,
+      "metrics": {
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
+        "precision": 1.0,
+        "recall": 0.051,
+        "f1": 0.097,
+        "acc_class0": 1.0,
+        "acc_class1": 0.051,
+        "n_constants": 10,
+        "complexity_penalty": 1.0,
+        "final_fitness": 0.5255,
+        "n_samples": 50000,
+        "errors": 48290
+      },
+      "hash": "bd32d151a5"
+    },
+    {
+      "iteration": 36,
+      "metrics": {
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
+        "precision": 1.0,
+        "recall": 0.051,
+        "f1": 0.097,
+        "acc_class0": 1.0,
+        "acc_class1": 0.051,
+        "n_constants": 19,
         "complexity_penalty": 0.5263,
         "final_fitness": 0.2766,
         "n_samples": 50000,
         "errors": 48290
       },
-      "hash": "958cbe9863",
-      "explore_stdout": "=== DATASET OVERVIEW ===\nShape: (50000, 10)\nDecision distribution:\ndecision\n1    0.802\n0    0.198\nName: proportion, dtype: float64\n\n=== TYPE DISTRIBUTION BY DECISION ===\n\nDecision 0 (evict=0):\n  LOAD: 100.00%\n\nDecision 1 (evict=1):\n  LOAD: 97.41%\n  TRANSLATION: 2.47%\n  RFO: 0.12%\n\n=== PAGE ALIGNMENT (ip >> 12 == full_addr >> 12) ===\n"
-    },
-    {
-      "iteration": 24,
-      "metrics": {
-        "raw_accuracy": 0.3822,
-        "balanced_accuracy": 0.5395,
-        "precision": 1.0,
-        "recall": 0.079,
-        "f1": 0.1464,
-        "acc_class0": 1.0,
-        "acc_class1": 0.079,
-        "n_constants": 24,
-        "complexity_penalty": 0.3448,
-        "final_fitness": 0.186,
-        "n_samples": 50000,
-        "errors": 0
-      },
-      "hash": "0f1952f18e",
-      "explore_stdout": "======================================================================\nDATASET OVERVIEW\n======================================================================\nShape: (50000, 10)\n\nDecision distribution:\ndecision\n1    0.802\n0    0.198\nName: proportion, dtype: float64\n\nData types:\ntriggering_cpu    int64\nset               int64\nway               int64\nfull_addr         int64\nip                int64\nvictim_addr       int64\ntype              int64\nhit               int64\ntimestamp         int64\ndecis"
-    },
-    {
-      "iteration": 25,
-      "metrics": {
-        "raw_accuracy": 0.8285,
-        "balanced_accuracy": 0.8715,
-        "precision": 0.9982,
-        "recall": 0.7458,
-        "f1": 0.8537,
-        "acc_class0": 0.9972,
-        "acc_class1": 0.7458,
-        "n_constants": 19,
-        "complexity_penalty": 0.4167,
-        "final_fitness": 0.3631,
-        "n_samples": 50000,
-        "errors": 0
-      },
-      "hash": "3cf1abf72c",
-      "explore_stdout": "======================================================================\nCACHE REPLACEMENT HEURISTIC - DATA EXPLORATION\n======================================================================\n\nDataset shape: (50000, 10)\nDecision distribution:\ndecision\n1    40100\n0     9900\nName: count, dtype: int64\n\nACCESS TYPE distribution (0=LOAD, 1=RFO, 2=PREFETCH, 3=WRITE, 4=TRANSLATION):\n  Decision=0: {0: np.int64(9900)}\n  Decision=1: {0: np.int64(39060), 1: np.int64(48), 4: np.int64(992)}\n"
-    },
-    {
-      "iteration": 26,
-      "metrics": {
-        "raw_accuracy": 0.8285,
-        "balanced_accuracy": 0.8715,
-        "precision": 0.9982,
-        "recall": 0.7458,
-        "f1": 0.8537,
-        "acc_class0": 0.9972,
-        "acc_class1": 0.7458,
-        "n_constants": 21,
-        "complexity_penalty": 0.3846,
-        "final_fitness": 0.3352,
-        "n_samples": 50000,
-        "errors": 0
-      },
-      "hash": "38756fd1bf",
-      "explore_stdout": "================================================================================\nDATASET OVERVIEW\n================================================================================\nShape: (50000, 10)\nDecision distribution:\ndecision\n1    0.802\n0    0.198\nName: proportion, dtype: float64\n\n================================================================================\nACCESS TYPE vs DECISION\n================================================================================\ndecision    0         1     "
-    },
-    {
-      "iteration": 27,
-      "metrics": {
-        "raw_accuracy": 0.839,
-        "balanced_accuracy": 0.8793,
-        "precision": 0.9982,
-        "recall": 0.7614,
-        "f1": 0.8639,
-        "acc_class0": 0.9972,
-        "acc_class1": 0.7614,
-        "n_constants": 30,
-        "complexity_penalty": 0.2857,
-        "final_fitness": 0.2512,
-        "n_samples": 50000,
-        "errors": 0
-      },
-      "hash": "7cceb4a035",
-      "explore_stdout": "======================================================================\nCACHE REPLACEMENT HEURISTIC - DATA EXPLORATION\n======================================================================\n\nDataset shape: (50000, 10)\nDecision distribution:\ndecision\n1    40100\n0     9900\nName: count, dtype: int64\nDecision percentages:\ndecision\n1    80.2\n0    19.8\nName: proportion, dtype: float64\n\n======================================================================\n1. ACCESS TYPE vs DECISION\n===================="
-    },
-    {
-      "iteration": 28,
-      "metrics": {
-        "raw_accuracy": 0.6496,
-        "balanced_accuracy": 0.4895,
-        "precision": 0.666,
-        "recall": 0.9581,
-        "f1": 0.7858,
-        "acc_class0": 0.021,
-        "acc_class1": 0.9581,
-        "n_constants": 34,
-        "complexity_penalty": 0.2564,
-        "final_fitness": 0.0,
-        "n_samples": 50000,
-        "errors": 0
-      },
-      "hash": "6f646228c2",
-      "explore_stdout": "======================================================================\nDATASET OVERVIEW\n======================================================================\nShape: (50000, 10)\n\nDecision distribution:\ndecision\n1    0.802\n0    0.198\nName: proportion, dtype: float64\n\n======================================================================\nTYPE DISTRIBUTION BY DECISION\n======================================================================\ndecision    0         1      All\ntype                        "
-    },
-    {
-      "iteration": 29,
-      "metrics": {
-        "raw_accuracy": 0.6662,
-        "balanced_accuracy": 0.6607,
-        "precision": 0.795,
-        "recall": 0.6768,
-        "f1": 0.7312,
-        "acc_class0": 0.6445,
-        "acc_class1": 0.6768,
-        "n_constants": 31,
-        "complexity_penalty": 0.2778,
-        "final_fitness": 0.1835,
-        "n_samples": 50000,
-        "errors": 0
-      },
-      "hash": "1b824391c3",
-      "explore_stdout": "======================================================================\nDATASET OVERVIEW\n======================================================================\nShape: (50000, 10)\n\nDecision distribution:\ndecision\n1    0.802\n0    0.198\nName: proportion, dtype: float64\n\nData types:\ntriggering_cpu    int64\nset               int64\nway               int64\nfull_addr         int64\nip                int64\nvictim_addr       int64\ntype              int64\nhit               int64\ntimestamp         int64\ndecis"
-    },
-    {
-      "iteration": 30,
-      "metrics": {
-        "raw_accuracy": 0.6787,
-        "balanced_accuracy": 0.733,
-        "precision": 0.9155,
-        "recall": 0.5741,
-        "f1": 0.7056,
-        "acc_class0": 0.892,
-        "acc_class1": 0.5741,
-        "n_constants": 39,
-        "complexity_penalty": 0.2273,
-        "final_fitness": 0.1666,
-        "n_samples": 50000,
-        "errors": 0
-      },
-      "hash": "210c0b8029",
-      "explore_stdout": "======================================================================\nDATASET OVERVIEW\n======================================================================\nShape: (50000, 10)\nDecision distribution:\ndecision\n1    0.802\n0    0.198\nName: proportion, dtype: float64\n\n======================================================================\nACCESS TYPE CORRELATION WITH EVICTION\n======================================================================\ndecision          0           1\ntype                  "
-    },
-    {
-      "iteration": 31,
-      "metrics": {
-        "raw_accuracy": 0.6486,
-        "balanced_accuracy": 0.6476,
-        "precision": 0.7886,
-        "recall": 0.6506,
-        "f1": 0.713,
-        "acc_class0": 0.6446,
-        "acc_class1": 0.6506,
-        "n_constants": 34,
-        "complexity_penalty": 0.2564,
-        "final_fitness": 0.166,
-        "n_samples": 50000,
-        "errors": 0
-      },
-      "hash": "acef96ae3c",
-      "explore_stdout": "======================================================================\nDATASET OVERVIEW\n======================================================================\nShape: (50000, 10)\n\nDecision distribution:\ndecision\n1    40100\n0     9900\nName: count, dtype: int64\nDecision %:\ndecision\n1    80.2\n0    19.8\nName: proportion, dtype: float64\n\n======================================================================\nTYPE DISTRIBUTION PER CLASS\n==================================================================="
-    },
-    {
-      "iteration": 32,
-      "metrics": {
-        "raw_accuracy": 0.4311,
-        "balanced_accuracy": 0.5702,
-        "precision": 0.9363,
-        "recall": 0.163,
-        "f1": 0.2776,
-        "acc_class0": 0.9774,
-        "acc_class1": 0.163,
-        "n_constants": 39,
-        "complexity_penalty": 0.2273,
-        "final_fitness": 0.1296,
-        "n_samples": 50000,
-        "errors": 0
-      },
-      "hash": "f4a68c6686",
-      "explore_stdout": "======================================================================\nDATASET OVERVIEW\n======================================================================\nShape: (50000, 10)\nDecision distribution:\ndecision\n1    40100\n0     9900\nName: count, dtype: int64\n\n======================================================================\nACCESS TYPE vs DECISION (0=LOAD, 1=RFO, 2=PREFETCH, 3=WRITE, 4=TRANSLATION)\n======================================================================\ndecision         0     "
-    },
-    {
-      "iteration": 33,
-      "metrics": {
-        "raw_accuracy": 0.7265,
-        "balanced_accuracy": 0.6984,
-        "precision": 0.8055,
-        "recall": 0.7807,
-        "f1": 0.793,
-        "acc_class0": 0.616,
-        "acc_class1": 0.7807,
-        "n_constants": 28,
-        "complexity_penalty": 0.303,
-        "final_fitness": 0.2116,
-        "n_samples": 50000,
-        "errors": 0
-      },
-      "hash": "a70eabb51c",
-      "explore_stdout": "======================================================================\nDATASET OVERVIEW\n======================================================================\nShape: (50000, 10)\nDecision distribution:\ndecision\n1    0.802\n0    0.198\nName: proportion, dtype: float64\n\n======================================================================\nACCESS TYPE CORRELATION WITH EVICTION\n======================================================================\n      keep_count  total  evict_rate\ntype              "
-    },
-    {
-      "iteration": 34,
-      "metrics": {
-        "raw_accuracy": 0.7587,
-        "balanced_accuracy": 0.8201,
-        "precision": 1.0,
-        "recall": 0.6403,
-        "f1": 0.7807,
-        "acc_class0": 1.0,
-        "acc_class1": 0.6403,
-        "n_constants": 29,
-        "complexity_penalty": 0.2941,
-        "final_fitness": 0.2412,
-        "n_samples": 50000,
-        "errors": 0
-      },
-      "hash": "0296e195a1",
-      "explore_stdout": "================================================================================\nDATASET OVERVIEW\n================================================================================\nShape: (50000, 10)\n\nDecision distribution:\ndecision\n1    0.802\n0    0.198\nName: proportion, dtype: float64\n\nData types:\ntriggering_cpu    int64\nset               int64\nway               int64\nfull_addr         int64\nip                int64\nvictim_addr       int64\ntype              int64\nhit               int64\ntimestamp"
-    },
-    {
-      "iteration": 35,
-      "metrics": {
-        "raw_accuracy": 0.7589,
-        "balanced_accuracy": 0.8203,
-        "precision": 1.0,
-        "recall": 0.6405,
-        "f1": 0.7809,
-        "acc_class0": 1.0,
-        "acc_class1": 0.6405,
-        "n_constants": 32,
-        "complexity_penalty": 0.2703,
-        "final_fitness": 0.2217,
-        "n_samples": 50000,
-        "errors": 0
-      },
-      "hash": "c01619bc3f",
-      "explore_stdout": "======================================================================\nDATASET OVERVIEW\n======================================================================\nShape: (50000, 10)\nDecision distribution:\ndecision\n1    0.802\n0    0.198\nName: proportion, dtype: float64\n\n======================================================================\nACCESS TYPE CORRELATION WITH EVICTION\n======================================================================\n      Keep_Count  Total  Eviction_Rate_%\ntype         "
-    },
-    {
-      "iteration": 36,
-      "metrics": {
-        "raw_accuracy": 0.7589,
-        "balanced_accuracy": 0.8203,
-        "precision": 1.0,
-        "recall": 0.6406,
-        "f1": 0.7809,
-        "acc_class0": 1.0,
-        "acc_class1": 0.6406,
-        "n_constants": 31,
-        "complexity_penalty": 0.2778,
-        "final_fitness": 0.2279,
-        "n_samples": 50000,
-        "errors": 0
-      },
-      "hash": "f1b922379a",
-      "explore_stdout": "======================================================================\nDATASET OVERVIEW\n======================================================================\nShape: (50000, 10)\n\nDecision distribution:\ndecision\n1    40100\n0     9900\nName: count, dtype: int64\nDecision %:\ndecision\n1    80.2\n0    19.8\nName: proportion, dtype: float64\n\n======================================================================\nACCESS TYPE CORRELATION (0=LOAD, 1=RFO, 2=PREFETCH, 3=WRITE, 4=TRANSLATION)\n==================="
+      "hash": "6ac058d76c"
     },
     {
       "iteration": 37,
       "metrics": {
-        "raw_accuracy": 0.7589,
-        "balanced_accuracy": 0.8203,
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
         "precision": 1.0,
-        "recall": 0.6405,
-        "f1": 0.7809,
+        "recall": 0.051,
+        "f1": 0.097,
         "acc_class0": 1.0,
-        "acc_class1": 0.6405,
-        "n_constants": 29,
-        "complexity_penalty": 0.2941,
-        "final_fitness": 0.2413,
+        "acc_class1": 0.051,
+        "n_constants": 15,
+        "complexity_penalty": 0.6667,
+        "final_fitness": 0.3503,
         "n_samples": 50000,
-        "errors": 0
+        "errors": 48290
       },
-      "hash": "34e7a13596",
-      "explore_stdout": "======================================================================\nDATASET OVERVIEW\n======================================================================\nShape: (50000, 10)\n\nDecision distribution:\ndecision\n1    40100\n0     9900\nName: count, dtype: int64\nDecision ratio: decision\n1    0.802\n0    0.198\nName: proportion, dtype: float64\n\n======================================================================\nANALYSIS BY CLASS (0=EVICT vs 1=KEEP)\n==================================================="
+      "hash": "54850477b7"
     },
     {
       "iteration": 38,
       "metrics": {
-        "raw_accuracy": 0.4139,
-        "balanced_accuracy": 0.5631,
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
         "precision": 1.0,
-        "recall": 0.1262,
-        "f1": 0.2241,
+        "recall": 0.051,
+        "f1": 0.097,
         "acc_class0": 1.0,
-        "acc_class1": 0.1262,
-        "n_constants": 27,
-        "complexity_penalty": 0.3125,
-        "final_fitness": 0.176,
+        "acc_class1": 0.051,
+        "n_constants": 9,
+        "complexity_penalty": 1.0,
+        "final_fitness": 0.5255,
         "n_samples": 50000,
-        "errors": 0
+        "errors": 48290
       },
-      "hash": "4369047047",
-      "explore_stdout": "======================================================================\nDATASET OVERVIEW\n======================================================================\nShape: (50000, 10)\nDecision distribution:\ndecision\n1    0.802\n0    0.198\nName: proportion, dtype: float64\n\n======================================================================\nACCESS TYPE vs DECISION\n======================================================================\ndecision         0         1\ntype                        \n0         "
+      "hash": "77f1e094f6"
     },
     {
       "iteration": 39,
       "metrics": {
-        "raw_accuracy": 0.3812,
-        "balanced_accuracy": 0.5388,
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
         "precision": 1.0,
-        "recall": 0.0775,
-        "f1": 0.1439,
+        "recall": 0.051,
+        "f1": 0.097,
         "acc_class0": 1.0,
-        "acc_class1": 0.0775,
-        "n_constants": 30,
-        "complexity_penalty": 0.2857,
-        "final_fitness": 0.1539,
+        "acc_class1": 0.051,
+        "n_constants": 16,
+        "complexity_penalty": 0.625,
+        "final_fitness": 0.3284,
         "n_samples": 50000,
-        "errors": 0
+        "errors": 48290
       },
-      "hash": "bc928d8797",
-      "explore_stdout": "======================================================================\nCACHE REPLACEMENT HEURISTIC - DATA EXPLORATION\n======================================================================\n\n1. CLASS DISTRIBUTION:\ndecision\n1    0.802\n0    0.198\nName: proportion, dtype: float64\n\n2. ACCESS TYPE vs DECISION:\ndecision    0         1\ntype                   \n0         1.0  0.974065\n1         0.0  0.001197\n4         0.0  0.024738\n"
+      "hash": "8b45d19a58"
     },
     {
       "iteration": 40,
       "metrics": {
-        "raw_accuracy": 0.4393,
-        "balanced_accuracy": 0.4891,
-        "precision": 0.6571,
-        "recall": 0.3433,
-        "f1": 0.451,
-        "acc_class0": 0.635,
-        "acc_class1": 0.3433,
-        "n_constants": 30,
-        "complexity_penalty": 0.2857,
-        "final_fitness": 0.1398,
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
+        "precision": 1.0,
+        "recall": 0.051,
+        "f1": 0.097,
+        "acc_class0": 1.0,
+        "acc_class1": 0.051,
+        "n_constants": 12,
+        "complexity_penalty": 0.8333,
+        "final_fitness": 0.4379,
         "n_samples": 50000,
-        "errors": 0
+        "errors": 48290
       },
-      "hash": "03be702989",
-      "explore_stdout": "======================================================================\nCACHE REPLACEMENT HEURISTIC - DATA EXPLORATION\n======================================================================\n\n1. CLASS DISTRIBUTION:\ndecision\n1    0.802\n0    0.198\nName: proportion, dtype: float64\n\n2. ACCESS TYPE vs DECISION:\n      count    sum  <lambda_0>\ntype                          \n0     48960  39060   20.220588\n1        48     48    0.000000\n4       992    992    0.000000\n(sum=evictions, lambda=eviction_rate_%)"
+      "hash": "65b5543fdf"
     },
     {
       "iteration": 41,
       "metrics": {
-        "raw_accuracy": 0.6129,
-        "balanced_accuracy": 0.7115,
-        "precision": 0.9999,
-        "recall": 0.423,
-        "f1": 0.5945,
-        "acc_class0": 0.9999,
-        "acc_class1": 0.423,
-        "n_constants": 33,
-        "complexity_penalty": 0.2632,
-        "final_fitness": 0.1872,
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
+        "precision": 1.0,
+        "recall": 0.051,
+        "f1": 0.097,
+        "acc_class0": 1.0,
+        "acc_class1": 0.051,
+        "n_constants": 18,
+        "complexity_penalty": 0.5556,
+        "final_fitness": 0.2919,
         "n_samples": 50000,
-        "errors": 0
+        "errors": 48290
       },
-      "hash": "3ed4e10969",
-      "explore_stdout": "======================================================================\nCACHE REPLACEMENT HEURISTIC - DATA EXPLORATION\n======================================================================\n\nDataset shape: (50000, 10)\nDecision distribution:\ndecision\n1    40100\n0     9900\nName: count, dtype: int64\n\n1. IP DISTRIBUTION BY CLASS\n  Decision=0: unique=15, mean=4.20e+06, std=6.97e+01\n  Decision=1: unique=91, mean=4.10e+06, std=6.53e+05\n\n2. FULL_ADDR DISTRIBUTION BY CLASS\n  Decision=0: unique=9900, mean="
+      "hash": "0b1cc11430"
     },
     {
       "iteration": 42,
       "metrics": {
-        "raw_accuracy": 0.6129,
-        "balanced_accuracy": 0.7115,
-        "precision": 0.9999,
-        "recall": 0.423,
-        "f1": 0.5945,
-        "acc_class0": 0.9999,
-        "acc_class1": 0.423,
-        "n_constants": 44,
-        "complexity_penalty": 0.2041,
-        "final_fitness": 0.1452,
+        "raw_accuracy": 0.8515,
+        "balanced_accuracy": 0.8596,
+        "precision": 0.9359,
+        "recall": 0.8359,
+        "f1": 0.8831,
+        "acc_class0": 0.8834,
+        "acc_class1": 0.8359,
+        "n_constants": 6,
+        "complexity_penalty": 1.0,
+        "final_fitness": 0.8596,
         "n_samples": 50000,
         "errors": 0
       },
-      "hash": "23eb025fa0",
-      "explore_stdout": "======================================================================\nDATASET OVERVIEW\n======================================================================\nShape: (50000, 10)\n\nDecision distribution:\ndecision\n1    40100\n0     9900\nName: count, dtype: int64\nDecision proportions:\ndecision\n1    0.802\n0    0.198\nName: proportion, dtype: float64\n\n======================================================================\nACCESS TYPE CORRELATION\n==========================================================="
+      "hash": "c4c724959f"
     },
     {
       "iteration": 43,
       "metrics": {
-        "raw_accuracy": 0.3693,
-        "balanced_accuracy": 0.5299,
-        "precision": 1.0,
-        "recall": 0.0597,
-        "f1": 0.1127,
-        "acc_class0": 1.0,
-        "acc_class1": 0.0597,
-        "n_constants": 38,
-        "complexity_penalty": 0.2326,
-        "final_fitness": 0.1232,
+        "raw_accuracy": 0.8583,
+        "balanced_accuracy": 0.8923,
+        "precision": 0.9949,
+        "recall": 0.7928,
+        "f1": 0.8825,
+        "acc_class0": 0.9918,
+        "acc_class1": 0.7928,
+        "n_constants": 24,
+        "complexity_penalty": 0.4167,
+        "final_fitness": 0.3718,
         "n_samples": 50000,
         "errors": 0
       },
-      "hash": "2043d53dc3",
-      "explore_stdout": "=== DATASET OVERVIEW ===\nShape: (50000, 10)\nDecision distribution:\ndecision\n1    0.802\n0    0.198\nName: proportion, dtype: float64\n\n=== TYPE DISTRIBUTION BY DECISION ===\n\nDecision=0 (n=9900):\n  LOAD: 9900 (100.0%)\n\nDecision=1 (n=40100):\n  LOAD: 39060 (97.4%)\n  TRANSLATION: 992 (2.5%)\n  RFO: 48 (0.1%)\n\n=== PAGE ALIGNMENT (ip >> 12 == full_addr >> 12) ===\n"
+      "hash": "be15aa3280"
     },
     {
       "iteration": 44,
       "metrics": {
-        "raw_accuracy": 0.4351,
-        "balanced_accuracy": 0.579,
-        "precision": 1.0,
-        "recall": 0.1579,
-        "f1": 0.2728,
-        "acc_class0": 1.0,
-        "acc_class1": 0.1579,
-        "n_constants": 37,
-        "complexity_penalty": 0.2381,
-        "final_fitness": 0.1378,
+        "raw_accuracy": 0.8661,
+        "balanced_accuracy": 0.8949,
+        "precision": 0.9876,
+        "recall": 0.8106,
+        "f1": 0.8904,
+        "acc_class0": 0.9792,
+        "acc_class1": 0.8106,
+        "n_constants": 20,
+        "complexity_penalty": 0.5,
+        "final_fitness": 0.4475,
         "n_samples": 50000,
         "errors": 0
       },
-      "hash": "c4a8f11977",
-      "explore_stdout": "======================================================================\nCACHE REPLACEMENT HEURISTIC - DATA EXPLORATION\n======================================================================\n\nDataset shape: (50000, 10)\nDecision distribution:\ndecision\n1    0.802\n0    0.198\nName: proportion, dtype: float64\n\nTYPE distribution per decision class (0=evict, 1=keep):\ndecision    0         1\ntype                   \n0         1.0  0.974065\n1         0.0  0.001197\n4         0.0  0.024738\n\n"
+      "hash": "94e0ae7ab6"
     },
     {
       "iteration": 45,
       "metrics": {
-        "raw_accuracy": 0.3963,
-        "balanced_accuracy": 0.55,
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
         "precision": 1.0,
-        "recall": 0.1,
-        "f1": 0.1818,
+        "recall": 0.051,
+        "f1": 0.097,
         "acc_class0": 1.0,
-        "acc_class1": 0.1,
-        "n_constants": 33,
-        "complexity_penalty": 0.2632,
-        "final_fitness": 0.1447,
+        "acc_class1": 0.051,
+        "n_constants": 16,
+        "complexity_penalty": 0.625,
+        "final_fitness": 0.3284,
         "n_samples": 50000,
-        "errors": 0
+        "errors": 48290
       },
-      "hash": "471dfd8c21",
-      "explore_stdout": "================================================================================\nDATASET OVERVIEW\n================================================================================\nShape: (50000, 10)\n\nDecision distribution:\ndecision\n1    0.802\n0    0.198\nName: proportion, dtype: float64\n\n================================================================================\nTYPE DISTRIBUTION BY DECISION\n================================================================================\ndecision       0     "
+      "hash": "4a4d30ee26"
     },
     {
       "iteration": 46,
       "metrics": {
-        "raw_accuracy": 0.3963,
-        "balanced_accuracy": 0.55,
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
         "precision": 1.0,
-        "recall": 0.1,
-        "f1": 0.1818,
+        "recall": 0.051,
+        "f1": 0.097,
         "acc_class0": 1.0,
-        "acc_class1": 0.1,
-        "n_constants": 28,
-        "complexity_penalty": 0.303,
-        "final_fitness": 0.1667,
+        "acc_class1": 0.051,
+        "n_constants": 6,
+        "complexity_penalty": 1.0,
+        "final_fitness": 0.5255,
         "n_samples": 50000,
-        "errors": 0
+        "errors": 48290
       },
-      "hash": "54ceefa569",
-      "explore_stdout": "======================================================================\nCACHE REPLACEMENT HEURISTIC - DATA EXPLORATION\n======================================================================\n\nDataset shape: (50000, 10)\nDecision distribution:\ndecision\n1    0.802\n0    0.198\nName: proportion, dtype: float64\n\n1. ACCESS TYPE vs EVICTION DECISION\n             Keep_Count  Total  Evict_Rate_%\ntype                                        \nLOAD              39060  48960     20.220588\nRFO                  48 "
+      "hash": "7f6b2f5944"
     },
     {
       "iteration": 47,
       "metrics": {
-        "raw_accuracy": 0.394,
-        "balanced_accuracy": 0.5483,
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
         "precision": 1.0,
-        "recall": 0.0967,
-        "f1": 0.1763,
+        "recall": 0.051,
+        "f1": 0.097,
         "acc_class0": 1.0,
-        "acc_class1": 0.0967,
-        "n_constants": 20,
-        "complexity_penalty": 0.4,
-        "final_fitness": 0.2193,
+        "acc_class1": 0.051,
+        "n_constants": 14,
+        "complexity_penalty": 0.7143,
+        "final_fitness": 0.3754,
         "n_samples": 50000,
-        "errors": 0
+        "errors": 48290
       },
-      "hash": "ba474a6e9f",
-      "explore_stdout": "======================================================================\nDATASET OVERVIEW\n======================================================================\nShape: (50000, 10)\nDecision distribution:\ndecision\n1    40100\n0     9900\nName: count, dtype: int64\nDecision ratio (evict/total): 0.1980\n\n======================================================================\nACCESS TYPE DISTRIBUTION (0=LOAD, 1=RFO, 2=PREFETCH, 3=WRITE, 4=TRANSLATION)\n========================================================"
+      "hash": "70c578f97d"
     },
     {
       "iteration": 48,
       "metrics": {
-        "raw_accuracy": 0.3644,
-        "balanced_accuracy": 0.5262,
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
         "precision": 1.0,
-        "recall": 0.0524,
-        "f1": 0.0996,
+        "recall": 0.051,
+        "f1": 0.097,
         "acc_class0": 1.0,
-        "acc_class1": 0.0524,
-        "n_constants": 16,
-        "complexity_penalty": 0.4762,
-        "final_fitness": 0.2506,
+        "acc_class1": 0.051,
+        "n_constants": 14,
+        "complexity_penalty": 0.7143,
+        "final_fitness": 0.3754,
         "n_samples": 50000,
-        "errors": 0
+        "errors": 48290
       },
-      "hash": "87ac083137",
-      "explore_stdout": "======================================================================\nDATASET OVERVIEW\n======================================================================\nShape: (50000, 10)\n\nDecision distribution:\ndecision\n1    40100\n0     9900\nName: count, dtype: int64\nDecision %:\ndecision\n1    80.2\n0    19.8\nName: proportion, dtype: float64\n\n======================================================================\nTYPE CORRELATION WITH EVICTION\n================================================================"
+      "hash": "a41a676a06"
     },
     {
       "iteration": 49,
       "metrics": {
-        "raw_accuracy": 0.3732,
-        "balanced_accuracy": 0.5328,
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
         "precision": 1.0,
-        "recall": 0.0656,
-        "f1": 0.1231,
+        "recall": 0.051,
+        "f1": 0.097,
         "acc_class0": 1.0,
-        "acc_class1": 0.0656,
-        "n_constants": 27,
-        "complexity_penalty": 0.3125,
-        "final_fitness": 0.1665,
+        "acc_class1": 0.051,
+        "n_constants": 16,
+        "complexity_penalty": 0.625,
+        "final_fitness": 0.3284,
         "n_samples": 50000,
-        "errors": 0
+        "errors": 48290
       },
-      "hash": "943759897f",
-      "explore_stdout": "=== DATASET OVERVIEW ===\nShape: (50000, 10)\nDecision distribution:\ndecision\n1    0.802\n0    0.198\nName: proportion, dtype: float64\n\n=== FEATURE DISTRIBUTIONS BY DECISION ===\n\ntype distribution per decision class:\ndecision    0         1\ntype                   \n0         1.0  0.974065\n1         0.0  0.001197\n4         0.0  0.024738\n\ntriggering_cpu distribution per decision class:\ndecision          0    1\ntriggering_cpu          \n0               1.0  1.0\n\nhit distribution per decision class:\ndecis"
+      "hash": "154c01afb9"
     },
     {
       "iteration": 50,
       "metrics": {
-        "raw_accuracy": 0.3719,
-        "balanced_accuracy": 0.5318,
+        "raw_accuracy": 0.3634,
+        "balanced_accuracy": 0.5255,
         "precision": 1.0,
-        "recall": 0.0637,
-        "f1": 0.1197,
+        "recall": 0.051,
+        "f1": 0.097,
         "acc_class0": 1.0,
-        "acc_class1": 0.0637,
-        "n_constants": 21,
-        "complexity_penalty": 0.3846,
-        "final_fitness": 0.2045,
+        "acc_class1": 0.051,
+        "n_constants": 9,
+        "complexity_penalty": 1.0,
+        "final_fitness": 0.5255,
         "n_samples": 50000,
-        "errors": 0
+        "errors": 48290
       },
-      "hash": "4cdeb97284",
-      "explore_stdout": "======================================================================\nDATASET OVERVIEW\n======================================================================\nShape: (50000, 10)\n\nDecision distribution:\ndecision\n1    40100\n0     9900\nName: count, dtype: int64\nDecision proportions:\ndecision\n1    0.802\n0    0.198\nName: proportion, dtype: float64\n\n======================================================================\nACCESS TYPE CORRELATION (0=LOAD, 1=RFO, 2=PREFETCH, 3=WRITE, 4=TRANSLATION)\n======="
+      "hash": "ebda5146e4"
     }
   ]
 }
