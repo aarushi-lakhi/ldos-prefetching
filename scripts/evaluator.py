@@ -38,7 +38,7 @@ GLIDER_MCF_BASELINE = 0.8114
 
 # Heuristics with ≤ CONSTANT_THRESHOLD numeric literals get no penalty.
 # Each constant beyond that reduces the penalty factor by 0.10.
-CONSTANT_THRESHOLD = 5
+CONSTANT_THRESHOLD = 10
 PENALTY_STEP       = 0.10   # 10 % reduction per extra constant
 
 # ── Banned features (leakage / inadmissible) ──────────────────────────────
